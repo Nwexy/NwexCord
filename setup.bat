@@ -1,5 +1,5 @@
 @echo off
-echo Kurulum basliyor...
+echo Setup is starting...
 pip install -r requirements.txt
-echo Kurulum tamamlandi.
+echo Setup completed.
 pause

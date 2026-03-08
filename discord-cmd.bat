@@ -2,8 +2,8 @@
 set WEBHOOK_URL="https://discord.com/api/webhooks/1480284001951289415/CMenimQeN3yvdcv3xEqM-mXW4V4tBy-bKs2TI7UqbbSVvFG0m5aJJGYv_UozCJ0QrSZ7"
 
 if "%~1"=="" (
-    echo Kullanim: %0 "komut"
-    echo Ornek: %0 "dir"
+    echo Usage: %0 "command"
+    echo Example: %0 "dir"
     pause
     exit /b 1
 )
