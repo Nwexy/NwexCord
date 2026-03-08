@@ -6,9 +6,6 @@
 BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 PREFIX = "."
 
-# Old Webhook Setting (Can be kept as a backup)
-WEBHOOK_URL = "PUT_YOUR_WEBHOOK_URL_HERE"
-
 # Pre-defined commands
 COMMANDS = {
     "status": "systeminfo",
