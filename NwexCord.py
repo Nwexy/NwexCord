@@ -399,18 +399,49 @@ class EditValueModal(discord.ui.Modal, title="Edit Registry Value"):
         self.reg_path = reg_path
         self.session_id = session_id
         self.page = page
+        self.original_name = prefill_name  # Store original name to detect renames
         self.val_name.default = prefill_name
         self.val_type.default = prefill_type
         self.val_data.default = prefill_data[:100]
     
     async def on_submit(self, interaction: discord.Interaction):
-        success, msg = RegistryEditor.add_value(
-            self.reg_path, str(self.val_name), str(self.val_type), str(self.val_data)
-        )
-        status = "✅ Value updated!" if success else f"❌ Error: {msg}"
-        embed = build_registry_embed(self.reg_path, self.session_id)
-        view = RegistryView(self.reg_path, self.session_id, page=self.page)
-        await interaction.response.edit_message(content=status, embed=embed, view=view)
+        try:
+            new_name = str(self.val_name).strip()
+            reg_type = str(self.val_type).strip().upper()
+            data = str(self.val_data).strip()
+            
+            # If name changed, delete old value first
+            renamed = new_name != self.original_name
+            if renamed:
+                RegistryEditor.delete_value(self.reg_path, self.original_name)
+            
+            success, msg = RegistryEditor.add_value(self.reg_path, new_name, reg_type, data)
+            
+            color = discord.Color.green() if success else discord.Color.red()
+            status_icon = "✅" if success else "❌"
+            
+            desc = f"**Name:** `{new_name}`\n**Type:** `{reg_type}`\n**Data:** `{data}`\n\n**Result:** {msg}"
+            if renamed:
+                desc = f"**Renamed:** `{self.original_name}` → `{new_name}`\n" + desc
+            
+            result_embed = discord.Embed(
+                title=f"{status_icon} Edit Value",
+                description=desc,
+                color=color
+            )
+            result_embed.set_footer(text=f"Path: {self.reg_path}")
+            await interaction.response.send_message(embed=result_embed, ephemeral=True)
+        except Exception as e:
+            try:
+                await interaction.response.send_message(f"❌ Unexpected error: {e}", ephemeral=True)
+            except Exception:
+                await interaction.followup.send(f"❌ Unexpected error: {e}", ephemeral=True)
+    
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        try:
+            await interaction.response.send_message(f"❌ Modal error: {error}", ephemeral=True)
+        except Exception:
+            await interaction.followup.send(f"❌ Modal error: {error}", ephemeral=True)
 
 
 class RegistryNavSelect(discord.ui.Select):
@@ -601,6 +632,20 @@ class RegistryView(discord.ui.View):
             await interaction.response.send_message("❌ Select a key first!", ephemeral=True)
             return
         await interaction.response.send_modal(NewValueModal(self.current_path, self.session_id, self.page))
+    
+    @discord.ui.button(label="HKCU Run", emoji="👤", style=discord.ButtonStyle.secondary, row=3)
+    async def hkcu_run_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        path = r"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run"
+        embed = build_registry_embed(path, self.session_id)
+        view = RegistryView(path, self.session_id, page=0)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="HKLM Run", emoji="💻", style=discord.ButtonStyle.secondary, row=3)
+    async def hklm_run_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        path = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        embed = build_registry_embed(path, self.session_id)
+        view = RegistryView(path, self.session_id, page=0)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
 
 
 class ToolsPanelView(discord.ui.View):
@@ -799,6 +844,6 @@ if __name__ == "__main__":
         sys.exit(1)
         
     try:
-        bot.run(config.BOT_TOKEN)
+        bot.run(config.BOT_TOKEN.strip())
     except Exception as e:
         print(f"Failed to start bot: {e}")
