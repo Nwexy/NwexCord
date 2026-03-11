@@ -3,7 +3,7 @@
 # Discord Bot Settings
 # Get your token from https://discord.com/developers/applications
 # Make sure to enable the 'Message Content Intent'!
-BOT_TOKEN = "BOT_TOKEN_HERE"
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 PREFIX = "."
 
 # Pre-defined commands
