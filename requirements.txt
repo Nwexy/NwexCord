@@ -1,2 +1,8 @@
 requests
 discord.py
+Pillow
+opencv-python
+sounddevice
+scipy
+pynput
+psutil

