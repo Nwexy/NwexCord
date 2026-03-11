@@ -1,7 +1,6 @@
 @echo off
-@echo off
-@chcp 65001 >nul
-@setlocal enabledelayedexpansion
+chcp 65001 >nul
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title NwexCord - All-In-One Launcher
 
@@ -127,21 +126,18 @@ echo [^>] Starting NwexCord...
 echo ========================================
 echo.
 ping -n 5 127.0.0.1 >nul
-@cls
-@echo off
-@setlocal disabledelayedexpansion
-@echo/
-@echo/
-@for /f "delims=: tokens=1*" %%a in ('findstr /b "::LOGO:" "%~f0"') do @(
+cls
+setlocal disabledelayedexpansion
+echo.
+for /f "delims=: tokens=1*" %%a in ('findstr /b "::LOGO:" "%~f0"') do @(
     if "%%b"=="" (
         echo/
     ) else (
         echo/%%b
     )
 )
-@endlocal
-@echo/
-@echo/
+endlocal
+echo.
 
 if not exist NwexCord.py (
     echo [X] NwexCord.py not found!
@@ -158,14 +154,14 @@ pause
 
 ::LOGO:
 ::LOGO:
-::LOGO:[34m                     ███╗   ██╗██╗    ██╗███████╗██╗  ██╗ ██████╗ ██████╗ ██████╗ ██████╗ [0m
-::LOGO:[94m                     ████╗  ██║██║    ██║██╔════╝╚██╗██╔╝██╔════╝██╔═══██╗██╔══██╗██╔══██╗[0m
-::LOGO:[36m                     ██╔██╗ ██║██║ █╗ ██║█████╗   ╚███╔╝ ██║     ██║   ██║██████╔╝██║  ██║[0m
-::LOGO:[36m                     ██║╚██╗██║██║███╗██║██╔══╝   ██╔██╗ ██║     ██║   ██║██╔══██╗██║  ██║[0m
-::LOGO:[94m                     ██║ ╚████║╚███╔███╔╝███████╗██╔╝ ██╗╚██████╗╚██████╔╝██║  ██║██████╔╝[0m
-::LOGO:[34m                     ╚═╝  ╚═══╝ ╚══╝╚══╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ [0m
+::LOGO:[34m                        ███╗   ██╗██╗    ██╗███████╗██╗  ██╗ ██████╗ ██████╗ ██████╗ ██████╗ [0m
+::LOGO:[94m                        ████╗  ██║██║    ██║██╔════╝╚██╗██╔╝██╔════╝██╔═══██╗██╔══██╗██╔══██╗[0m
+::LOGO:[36m                        ██╔██╗ ██║██║ █╗ ██║█████╗   ╚███╔╝ ██║     ██║   ██║██████╔╝██║  ██║[0m
+::LOGO:[36m                        ██║╚██╗██║██║███╗██║██╔══╝   ██╔██╗ ██║     ██║   ██║██╔══██╗██║  ██║[0m
+::LOGO:[94m                        ██║ ╚████║╚███╔███╔╝███████╗██╔╝ ██╗╚██████╗╚██████╔╝██║  ██║██████╔╝[0m
+::LOGO:[34m                        ╚═╝  ╚═══╝ ╚══╝╚══╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ [0m
 ::LOGO:
-::LOGO:                                   [36mWebsite   : https://nwexy.com[0m 
-::LOGO:                                   [36mGitHub    : https://github.com/nwexy[0m 
+::LOGO:                                       [36mWebsite   : https://nwexy.com[0m 
+::LOGO:                                       [36mGitHub    : https://github.com/nwexy[0m 
 ::LOGO:
 ::LOGO:[90;1m========================================================================================================================[0m
