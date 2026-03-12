@@ -7,3 +7,4 @@ scipy
 Flask
 pynput
 psutil
+pyaudiowpatch

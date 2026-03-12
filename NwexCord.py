@@ -2895,24 +2895,106 @@ class LiveStreamManager:
     _is_running = False
     _public_url = None
     
+    _current_monitor = 0
+    _current_res = "720p"
+    
+    @staticmethod
+    def _gen_wav_header(sample_rate, channels, bits_per_sample):
+        import struct
+        header = b'RIFF'
+        header += struct.pack('<L', 0xFFFFFFFF) 
+        header += b'WAVE'
+        header += b'fmt '
+        header += struct.pack('<L', 16) 
+        header += struct.pack('<H', 1)  
+        header += struct.pack('<H', channels)
+        header += struct.pack('<L', sample_rate)
+        header += struct.pack('<L', sample_rate * channels * (bits_per_sample // 8))
+        header += struct.pack('<H', channels * (bits_per_sample // 8))
+        header += struct.pack('<H', bits_per_sample)
+        header += b'data'
+        header += struct.pack('<L', 0xFFFFFFFF) 
+        return header
+
+    @staticmethod
+    def _gen_audio_frames():
+        import pyaudiowpatch as pyaudio
+        p = pyaudio.PyAudio()
+        try:
+            wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
+            default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+            if not default_speakers["isLoopbackDevice"]:
+                for loopback in p.get_loopback_device_info_generator():
+                    if default_speakers["name"] in loopback["name"]:
+                        default_speakers = loopback
+                        break
+                        
+            stream = p.open(format=pyaudio.paInt16,
+                channels=default_speakers["maxInputChannels"],
+                rate=int(default_speakers["defaultSampleRate"]),
+                frames_per_buffer=2048,
+                input=True,
+                input_device_index=default_speakers["index"],
+            )
+            
+            yield LiveStreamManager._gen_wav_header(
+                int(default_speakers["defaultSampleRate"]),
+                default_speakers["maxInputChannels"],
+                16
+            )
+            
+            while LiveStreamManager._is_running:
+                data = stream.read(2048, exception_on_overflow=False)
+                yield data
+                
+        except Exception as e:
+            print(f"Audio stream error: {e}")
+            yield b""
+        finally:
+            p.terminate()
+
     @staticmethod
     def _gen_frames():
         from PIL import ImageGrab
         while LiveStreamManager._is_running:
             try:
-                img = ImageGrab.grab(all_screens=True)
-                img.thumbnail((1280, 720))  # Resize to save bandwidth
+                monitors = SystemManager.get_monitors()
+                if not monitors:
+                    img = ImageGrab.grab(all_screens=True)
+                else:
+                    idx = LiveStreamManager._current_monitor
+                    if idx >= len(monitors) or idx < 0:
+                        idx = 0
+                    if LiveStreamManager._current_monitor == -1: # All monitors
+                        img = ImageGrab.grab(all_screens=True)
+                    else:
+                        img = ImageGrab.grab(all_screens=True, bbox=monitors[idx])
+                
+                res = LiveStreamManager._current_res
+                if res == "1080p":
+                    img.thumbnail((1920, 1080))
+                    qual = 70
+                elif res == "720p":
+                    img.thumbnail((1280, 720))
+                    qual = 60
+                elif res == "480p":
+                    img.thumbnail((854, 480))
+                    qual = 40
+                else:  # Original
+                    qual = 80
+                    
                 buf = io.BytesIO()
-                img.save(buf, format='JPEG', quality=50)
+                img.save(buf, format='JPEG', quality=qual)
                 frame = buf.getvalue()
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-                time.sleep(0.1) # Max ~10 FPS
+                time.sleep(0.05) # Max ~20 FPS
             except Exception:
-                time.sleep(1)
+                time.sleep(0.5)
 
     @staticmethod
     def _run_flask():
+        from flask import Flask, Response, request, stream_with_context, jsonify
         app = Flask(__name__)
         # Suppress Flask logging
         import logging
@@ -2921,17 +3003,69 @@ class LiveStreamManager:
 
         @app.route('/')
         def index():
-            return '''
+            monitors = SystemManager.get_monitors()
+            monitor_opts = f'<option value="-1" {"selected" if LiveStreamManager._current_monitor == -1 else ""}>All Monitors</option>'
+            for i in range(len(monitors)):
+                sel = "selected" if LiveStreamManager._current_monitor == i else ""
+                monitor_opts += f'<option value="{i}" {sel}>Monitor {i+1}</option>'
+                
+            res_opts = ""
+            for r in ["1080p", "720p", "480p", "Original"]:
+                sel = "selected" if LiveStreamManager._current_res == r else ""
+                res_opts += f'<option value="{r}" {sel}>{r}</option>'
+
+            return f'''
             <html>
               <head>
-                <title>NwexCord Live Screen</title>
+                <title>NwexCord Live Stream</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
-                  body { background-color: #000; color: #fff; text-align: center; margin: 0; padding: 0; overflow: hidden; }
-                  img { width: 100vw; height: 100vh; object-fit: fill; }
+                  body {{ background-color: #0e0e10; color: #fff; text-align: center; margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }}
+                  #controls {{ position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; z-index: 999; display: flex; gap: 10px; transition: opacity 0.3s; }}
+                  #controls:hover {{ opacity: 1; }}
+                  select, button {{ background: #2f3136; color: white; border: 1px solid #4f545c; padding: 5px 10px; border-radius: 4px; outline: none; cursor: pointer; }}
+                  select:hover, button:hover {{ background: #4f545c; }}
+                  img {{ width: 100vw; height: 100vh; object-fit: contain; }}
                 </style>
               </head>
               <body>
-                <img src="/stream" />
+                <div id="controls">
+                  <select id="monitor" onchange="updateSettings()">
+                    {monitor_opts}
+                  </select>
+                  <select id="res" onchange="updateSettings()">
+                    {res_opts}
+                  </select>
+                  <button onclick="document.getElementById('stream_img').src='/stream?'+new Date().getTime()">Refresh Screen</button>
+                  <audio id="desktop_audio" controls src="/audio" style="height: 30px;"></audio>
+                </div>
+                <img id="stream_img" src="/stream" />
+                
+                <script>
+                  let controls = document.getElementById("controls");
+                  let timeout;
+                  document.addEventListener("mousemove", () => {{
+                    controls.style.opacity = "1";
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => controls.style.opacity = "0.2", 2000);
+                  }});
+                  
+                  function updateSettings() {{
+                    const mon = document.getElementById("monitor").value;
+                    const res = document.getElementById("res").value;
+                    fetch("/config", {{
+                      method: "POST",
+                      headers: {{"Content-Type": "application/json"}},
+                      body: JSON.stringify({{monitor: mon, resolution: res}})
+                    }});
+                  }}
+                  
+                  // Fix strict autoplay policies by playing audio on interaction
+                  document.body.addEventListener('click', () => {{
+                    let audio = document.getElementById("desktop_audio");
+                    if(audio.paused) audio.play();
+                  }}, {{once: true}});
+                </script>
               </body>
             </html>
             '''
@@ -2939,6 +3073,17 @@ class LiveStreamManager:
         @app.route('/stream')
         def stream():
             return Response(LiveStreamManager._gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+            
+        @app.route('/audio')
+        def audio():
+            return Response(stream_with_context(LiveStreamManager._gen_audio_frames()), mimetype='audio/wav')
+            
+        @app.route('/config', methods=['POST'])
+        def config():
+            data = request.json
+            if 'monitor' in data: LiveStreamManager._current_monitor = int(data['monitor'])
+            if 'resolution' in data: LiveStreamManager._current_res = data['resolution']
+            return jsonify({"status": "ok"})
             
         try:
             app.run(host='127.0.0.1', port=8080, threaded=True, use_reloader=False)
