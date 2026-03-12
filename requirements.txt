@@ -4,5 +4,6 @@ Pillow
 opencv-python
 sounddevice
 scipy
+Flask
 pynput
 psutil

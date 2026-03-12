@@ -120,7 +120,22 @@ echo.
 echo [+] Dependencies are verified.
 echo.
 
-:: 4. Run the bot
+:: 4. Install Cloudflare Tunnel
+echo [*] Checking Cloudflared Tunnel...
+if not exist cloudflared.exe (
+    echo [*] Downloading cloudflared.exe...
+    curl -L -o cloudflared.exe "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo [X] Failed to download cloudflared.exe. Live Screen may not work.
+    ) else (
+        echo [+] Cloudflared installed successfully.
+    )
+) else (
+    echo [+] Cloudflared is already installed.
+)
+echo.
+
+:: 5. Run the bot
 echo ========================================
 echo [^>] Starting NwexCord...
 echo ========================================

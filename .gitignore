@@ -8,3 +8,6 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Cloudflared
+cloudflared.exe

