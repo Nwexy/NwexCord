@@ -3,6 +3,7 @@ import ctypes
 import threading
 import os
 import webbrowser
+import base64
 
 
 class FunManager:

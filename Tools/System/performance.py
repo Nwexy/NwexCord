@@ -3,6 +3,10 @@ import asyncio
 from Tools.System.manager import SystemManager
 
 
+def _get_system_panel():
+    from Tools.System.panel import embed_system_panel, SystemPanelView
+    return embed_system_panel, SystemPanelView
+
 def _progress_bar(percent, length=10):
     """Create a text-based progress bar."""
     if isinstance(percent, str):
@@ -72,7 +76,7 @@ class PerformanceView(discord.ui.View):
         super().__init__(timeout=300)
         self.session_id = session_id
 
-    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary, row=0)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         loop = asyncio.get_event_loop()
@@ -82,6 +86,6 @@ class PerformanceView(discord.ui.View):
 
     @discord.ui.button(label="Back to System", emoji="⬅", style=discord.ButtonStyle.secondary, row=0)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content=None, embed=embed_system_panel(), view=SystemPanelView())
+        await interaction.response.edit_message(content=None, embed=_get_system_panel()[0](), view=_get_system_panel()[1]())
 
 

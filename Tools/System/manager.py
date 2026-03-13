@@ -6,6 +6,7 @@ import ctypes
 import time
 import hashlib
 import sys
+import platform
 from datetime import datetime
 
 
@@ -129,6 +130,7 @@ class SystemManager:
                 wf.setsampwidth(2)  # 16-bit = 2 bytes
                 wf.setframerate(sample_rate)
                 wf.writeframes(recording.tobytes())
+            
             buf.seek(0)
             return True, buf
         except Exception as e:

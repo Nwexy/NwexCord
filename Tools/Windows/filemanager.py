@@ -461,19 +461,19 @@ class FileManagerView(discord.ui.View):
         view = FileManagerView(self.session_id, parent, items)
         await interaction.response.edit_message(content=None, embed=embed, view=view)
 
-    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=2)
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary, row=2)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
         view = FileManagerView(self.session_id, self.current_path, items)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
 
-    @discord.ui.button(label="Search", emoji="🔍", style=discord.ButtonStyle.primary, row=2)
+    @discord.ui.button(label="Search", emoji="🔍", style=discord.ButtonStyle.secondary, row=2)
     async def search_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(FMSearchModal(self.session_id, self.current_path))
 
     @discord.ui.button(label="Back to Windows", emoji="🪟", style=discord.ButtonStyle.secondary, row=2)
     async def back_windows_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content=None, embed=embed_windows_panel(), view=WindowsPanelView())
+        await interaction.response.edit_message(content=None, embed=_get_windows_panel()[0](), view=_get_windows_panel()[1]())
 
 

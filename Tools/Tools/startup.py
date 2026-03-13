@@ -257,7 +257,7 @@ class StartupManagerView(discord.ui.View):
         # Add select dropdown
         self.add_item(StartupSelect(self.items_data, session_id))
     
-    @discord.ui.button(label="Remove", emoji="🗑️", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(label="Remove", emoji="🗑️", style=discord.ButtonStyle.secondary, row=1)
     async def remove_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.selected_idx < 0 or self.selected_idx >= len(self.items_data):
             await interaction.response.send_message("❌ Please select a startup item first!", ephemeral=True)
@@ -279,7 +279,7 @@ class StartupManagerView(discord.ui.View):
         view = StartupManagerView(self.session_id, new_items)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         new_items = StartupManager.get_all_items()
@@ -289,7 +289,7 @@ class StartupManagerView(discord.ui.View):
     
     @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+        await interaction.response.edit_message(content=None, embed=_get_tools_panel()[0](), view=_get_tools_panel()[1]())
 
 
 # ========================================

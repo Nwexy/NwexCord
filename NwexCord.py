@@ -27,12 +27,12 @@ async def on_ready():
     client_id = bot.user.id
     invite_link = f"https://discord.com/api/oauth2/authorize?client_id={client_id}&permissions=8&scope=bot"
     
-    print(f'--- NwexCord Active ---')
+    print(f'================================================ NwexCord Active =======================================================')
     print(f'Bot Username: {bot.user.name}')
     print(f'Bot ID: {bot.user.id}')
     print(f'Server Count: {len(bot.guilds)}')
     print(f'Invite Link: {invite_link}')
-    print(f'----------------------')
+    print(f'========================================================================================================================')
     
     if len(bot.guilds) == 0:
         print("WARNING: The bot is currently not in any servers!")

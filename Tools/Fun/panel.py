@@ -1,6 +1,8 @@
 import discord
+from core.info import get_sys_info
 import asyncio
 import hashlib
+import threading
 from datetime import datetime
 from Tools.Fun.manager import FunManager
 
@@ -71,10 +73,10 @@ class ClientChatView(discord.ui.View):
     def __init__(self, chat_history=None):
         super().__init__(timeout=600)
         self.chat_history = chat_history if chat_history is not None else []
-    @discord.ui.button(label="Send", emoji="\U0001f4e4", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Send", emoji="\U0001f4e4", style=discord.ButtonStyle.secondary)
     async def send_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ClientChatSendModal(self.chat_history))
-    @discord.ui.button(label="Clear", emoji="\U0001f5d1\ufe0f", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Clear", emoji="\U0001f5d1\ufe0f", style=discord.ButtonStyle.secondary)
     async def clear_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.chat_history.clear()
         await interaction.response.edit_message(content=None, embed=build_chat_embed(self.chat_history), view=ClientChatView(self.chat_history))
@@ -144,14 +146,14 @@ class MessageBoxTabView(discord.ui.View):
         self.selected_button = button
         self.add_item(MsgBoxIconSelect(icon))
         self.add_item(MsgBoxButtonSelect(button))
-    @discord.ui.button(label="📦 MessageBox", style=discord.ButtonStyle.primary, disabled=True, row=0)
+    @discord.ui.button(label="📦 MessageBox", style=discord.ButtonStyle.secondary, disabled=True, row=0)
     async def tab_msgbox(self, interaction: discord.Interaction, button: discord.ui.Button): pass
     @discord.ui.button(label="🔔 BalloonTooltip", style=discord.ButtonStyle.secondary, row=0)
     async def tab_balloon(self, interaction: discord.Interaction, button: discord.ui.Button):
         e = discord.Embed(title="🔔 BalloonTooltip", description="Configure and send a BalloonTooltip notification.", color=discord.Color.from_rgb(255, 85, 85))
         e.set_footer(text="NwexCord • Fun")
         await interaction.response.edit_message(content=None, embed=e, view=BalloonTipTabView())
-    @discord.ui.button(label="📤 Send", style=discord.ButtonStyle.success, row=3)
+    @discord.ui.button(label="📤 Send", style=discord.ButtonStyle.secondary, row=3)
     async def send_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(MessageBoxSendModal(self.selected_icon, self.selected_button))
     @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=3)
@@ -176,9 +178,9 @@ class BalloonTipTabView(discord.ui.View):
         e = discord.Embed(title="📦 MessageBox", description="Configure and send a MessageBox to the client.", color=discord.Color.from_rgb(255, 85, 85))
         e.set_footer(text="NwexCord • Fun")
         await interaction.response.edit_message(content=None, embed=e, view=MessageBoxTabView())
-    @discord.ui.button(label="🔔 BalloonTooltip", style=discord.ButtonStyle.primary, disabled=True, row=0)
+    @discord.ui.button(label="🔔 BalloonTooltip", style=discord.ButtonStyle.secondary, disabled=True, row=0)
     async def tab_balloon(self, interaction: discord.Interaction, button: discord.ui.Button): pass
-    @discord.ui.button(label="📤 Send", style=discord.ButtonStyle.success, row=2)
+    @discord.ui.button(label="📤 Send", style=discord.ButtonStyle.secondary, row=2)
     async def send_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(BalloonTipSendModal(self.selected_icon))
     @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=2)
@@ -197,11 +199,11 @@ def _fun_sub_embed(title, status_msg=None, success=None):
 class ClockPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
-    @discord.ui.button(label="Show", emoji="👁️", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Show", emoji="👁️", style=discord.ButtonStyle.secondary)
     async def show_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.clock_show()
         await interaction.response.edit_message(embed=_fun_sub_embed("🕐 Clock", m, s), view=ClockPanelView())
-    @discord.ui.button(label="Hide", emoji="🙈", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Hide", emoji="🙈", style=discord.ButtonStyle.secondary)
     async def hide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.clock_hide()
         await interaction.response.edit_message(embed=_fun_sub_embed("🕐 Clock", m, s), view=ClockPanelView())
@@ -212,11 +214,11 @@ class ClockPanelView(discord.ui.View):
 class ScreenPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
-    @discord.ui.button(label="On", emoji="💡", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="On", emoji="💡", style=discord.ButtonStyle.secondary)
     async def on_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.screen_on()
         await interaction.response.edit_message(embed=_fun_sub_embed("📺 Screen", m, s), view=ScreenPanelView())
-    @discord.ui.button(label="Off", emoji="🌑", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Off", emoji="🌑", style=discord.ButtonStyle.secondary)
     async def off_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.screen_off()
         await interaction.response.edit_message(embed=_fun_sub_embed("📺 Screen", m, s), view=ScreenPanelView())
@@ -227,11 +229,11 @@ class ScreenPanelView(discord.ui.View):
 class ExplorerPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
-    @discord.ui.button(label="Kill", emoji="💀", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Kill", emoji="💀", style=discord.ButtonStyle.secondary)
     async def kill_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.explorer_kill()
         await interaction.response.edit_message(embed=_fun_sub_embed("📁 Explorer", m, s), view=ExplorerPanelView())
-    @discord.ui.button(label="Start", emoji="🚀", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Start", emoji="🚀", style=discord.ButtonStyle.secondary)
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.explorer_start()
         await interaction.response.edit_message(embed=_fun_sub_embed("📁 Explorer", m, s), view=ExplorerPanelView())
@@ -242,11 +244,11 @@ class ExplorerPanelView(discord.ui.View):
 class DesktopPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
-    @discord.ui.button(label="Show", emoji="👁️", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Show", emoji="👁️", style=discord.ButtonStyle.secondary)
     async def show_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.desktop_icons_show()
         await interaction.response.edit_message(embed=_fun_sub_embed("🖥️ Desktop Icons", m, s), view=DesktopPanelView())
-    @discord.ui.button(label="Hide", emoji="🙈", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Hide", emoji="🙈", style=discord.ButtonStyle.secondary)
     async def hide_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.desktop_icons_hide()
         await interaction.response.edit_message(embed=_fun_sub_embed("🖥️ Desktop Icons", m, s), view=DesktopPanelView())
@@ -257,11 +259,11 @@ class DesktopPanelView(discord.ui.View):
 class MousePanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
-    @discord.ui.button(label="Normal", emoji="🖱️", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Normal", emoji="🖱️", style=discord.ButtonStyle.secondary)
     async def normal_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.swap_mouse_normal()
         await interaction.response.edit_message(embed=_fun_sub_embed("🖱️ Mouse", m, s), view=MousePanelView())
-    @discord.ui.button(label="Swap", emoji="🔄", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Swap", emoji="🔄", style=discord.ButtonStyle.secondary)
     async def swap_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.swap_mouse_swap()
         await interaction.response.edit_message(embed=_fun_sub_embed("🖱️ Mouse", m, s), view=MousePanelView())
@@ -272,7 +274,7 @@ class MousePanelView(discord.ui.View):
 class VolumePanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
-    @discord.ui.button(label="Vol +25%", emoji="🔊", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Vol +25%", emoji="🔊", style=discord.ButtonStyle.secondary)
     async def up_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.volume_up()
         await interaction.response.edit_message(embed=_fun_sub_embed("🔊 Volume", m, s), view=VolumePanelView())
@@ -280,7 +282,7 @@ class VolumePanelView(discord.ui.View):
     async def down_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.volume_down()
         await interaction.response.edit_message(embed=_fun_sub_embed("🔉 Volume", m, s), view=VolumePanelView())
-    @discord.ui.button(label="Mute", emoji="🔇", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Mute", emoji="🔇", style=discord.ButtonStyle.secondary)
     async def mute_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         s, m = FunManager.volume_mute()
         await interaction.response.edit_message(embed=_fun_sub_embed("🔇 Volume", m, s), view=VolumePanelView())
@@ -301,18 +303,18 @@ class FunPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
     # Row 0: Modal actions
-    @discord.ui.button(label="Open URL", emoji="🌐", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Open URL", emoji="🌐", style=discord.ButtonStyle.secondary, row=0)
     async def open_url_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(OpenURLModal())
-    @discord.ui.button(label="Client Chat", emoji="\U0001f4ac", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Client Chat", emoji="\U0001f4ac", style=discord.ButtonStyle.secondary, row=0)
     async def client_chat_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=None, embed=build_chat_embed([]), view=ClientChatView())
-    @discord.ui.button(label="MessageBox", emoji="📦", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="MessageBox", emoji="📦", style=discord.ButtonStyle.secondary, row=0)
     async def messagebox_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         e = discord.Embed(title="📦 MessageBox", description="Configure and send a MessageBox to the client.", color=discord.Color.from_rgb(255, 85, 85))
         e.set_footer(text="NwexCord • Fun")
         await interaction.response.edit_message(content=None, embed=e, view=MessageBoxTabView())
-    @discord.ui.button(label="Text Speak", emoji="🗣️", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Text Speak", emoji="🗣️", style=discord.ButtonStyle.secondary, row=0)
     async def textspeak_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(TextSpeakModal())
     # Row 1: Sub-panel features
@@ -371,6 +373,6 @@ class FunPanelView(discord.ui.View):
         embed.add_field(name="\u200b", value=right_col, inline=True)
         embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
         msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
-        await interaction.edit_original_response(content=msg_content, embed=embed, view=StartupView())
+        await interaction.edit_original_response(content=msg_content, embed=embed, view=_get_startup_view()())
 
 

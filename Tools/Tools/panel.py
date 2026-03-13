@@ -3,8 +3,18 @@ import asyncio
 import hashlib
 from datetime import datetime, timezone
 from core.shell import ShellExecutor
+from core.info import get_sys_info
 
+def _get_startup_view():
+    from core.views import StartupView
+    return StartupView
 
+from Tools.Tools.registry import build_registry_embed, RegistryView
+from Tools.Tools.windows import build_activewindows_embed, ActiveWindowsView
+from Tools.Tools.tcp import build_tcp_embed, TCPConnectionsView
+from Tools.Tools.startup import StartupManager, build_startup_embed, StartupManagerView
+from Tools.Tools.process import ProcessManager, build_process_embed, ProcessManagerView
+from Tools.Tools.programs import InstalledProgramsManager, build_programs_embed, InstalledProgramsView
 # ========================================
 # Tools System
 # ========================================
@@ -67,7 +77,7 @@ class ToolResultView(discord.ui.View):
         super().__init__(timeout=300)
         self.tool_key = tool_key
     
-    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary, row=0)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await run_tool(interaction, self.tool_key)
     
@@ -192,7 +202,7 @@ class ToolsPanelView(discord.ui.View):
         embed.add_field(name="\u200b", value=right_col, inline=True)
         embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
         msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
-        await interaction.response.edit_message(content=msg_content, embed=embed, view=StartupView())
+        await interaction.response.edit_message(content=msg_content, embed=embed, view=_get_startup_view()())
 
 
 from flask import Flask, Response

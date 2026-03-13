@@ -185,7 +185,7 @@ class InstalledProgramsView(discord.ui.View):
         view = InstalledProgramsView(self.session_id, pg, self.programs_data)
         await interaction.response.edit_message(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.secondary, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         new_progs = InstalledProgramsManager.get_programs()
@@ -193,7 +193,7 @@ class InstalledProgramsView(discord.ui.View):
         view = InstalledProgramsView(self.session_id, 0, new_progs)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Uninstall", emoji="\ud83d\udeab", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(label="Uninstall", emoji="\ud83d\udeab", style=discord.ButtonStyle.secondary, row=1)
     async def uninstall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.selected_idx < 0 or self.selected_idx >= len(self.programs_data):
             await interaction.response.send_message("\u274c Please select a program first!", ephemeral=True)
@@ -214,7 +214,7 @@ class InstalledProgramsView(discord.ui.View):
     
     @discord.ui.button(label="Back to Tools", emoji="\u2b05", style=discord.ButtonStyle.secondary, row=1)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+        await interaction.response.edit_message(content=None, embed=_get_tools_panel()[0](), view=_get_tools_panel()[1]())
 
 
 # ========================================

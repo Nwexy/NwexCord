@@ -256,7 +256,7 @@ class ProcessManagerView(discord.ui.View):
         view = ProcessManagerView(self.session_id, pg, self.processes_data)
         await interaction.response.edit_message(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.secondary, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         new_procs = ProcessManager.get_processes()
@@ -264,7 +264,7 @@ class ProcessManagerView(discord.ui.View):
         view = ProcessManagerView(self.session_id, 0, new_procs)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Close", emoji="\ud83d\udeab", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(label="Close", emoji="\ud83d\udeab", style=discord.ButtonStyle.secondary, row=1)
     async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         target = self._get_selected()
         if not target:
@@ -290,7 +290,7 @@ class ProcessManagerView(discord.ui.View):
         view = ProcessManagerView(self.session_id, pg, new_procs)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Restart", emoji="\ud83d\udd04", style=discord.ButtonStyle.primary, row=2)
+    @discord.ui.button(label="Restart", emoji="\ud83d\udd04", style=discord.ButtonStyle.secondary, row=2)
     async def restart_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         target = self._get_selected()
         if not target:
@@ -356,7 +356,7 @@ class ProcessManagerView(discord.ui.View):
     
     @discord.ui.button(label="Back to Tools", emoji="\u2b05", style=discord.ButtonStyle.secondary, row=2)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+        await interaction.response.edit_message(content=None, embed=_get_tools_panel()[0](), view=_get_tools_panel()[1]())
 
 
 # ========================================

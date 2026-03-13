@@ -1,10 +1,9 @@
-requests
 discord.py
+Flask
 Pillow
 opencv-python
 sounddevice
-scipy
-Flask
-pynput
+numpy
 psutil
+pynput
 pyaudiowpatch

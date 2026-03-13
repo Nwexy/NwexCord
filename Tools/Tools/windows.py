@@ -149,14 +149,14 @@ class ActiveWindowsView(discord.ui.View):
         # Add select dropdown
         self.add_item(ActiveWindowsSelect(windows, session_id))
     
-    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         embed, windows = build_activewindows_embed(self.session_id)
         view = ActiveWindowsView(self.session_id)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Close", emoji="❌", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(label="Close", emoji="❌", style=discord.ButtonStyle.secondary, row=1)
     async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.selected_idx < 0 or self.selected_idx >= len(self.windows_data):
             await interaction.response.send_message("❌ Please select a window first!", ephemeral=True)
@@ -180,5 +180,5 @@ class ActiveWindowsView(discord.ui.View):
     
     @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+        await interaction.response.edit_message(content=None, embed=_get_tools_panel()[0](), view=_get_tools_panel()[1]())
 

@@ -361,7 +361,7 @@ class ValueActionView(discord.ui.View):
         self.val_data = val_data
         self.page = page
     
-    @discord.ui.button(label="Edit Value", emoji="✏️", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Edit Value", emoji="✏️", style=discord.ButtonStyle.secondary)
     async def edit_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = EditValueModal(
             self.reg_path, self.session_id,
@@ -372,7 +372,7 @@ class ValueActionView(discord.ui.View):
         )
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Delete Value", emoji="🗑️", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Delete Value", emoji="🗑️", style=discord.ButtonStyle.secondary)
     async def delete_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         success, msg = RegistryEditor.delete_value(self.reg_path, self.val_name)
         status = "✅ Value deleted!" if success else f"❌ Error: {msg}"
@@ -430,14 +430,14 @@ class RegistryView(discord.ui.View):
         view = RegistryView(self.current_path, self.session_id, page=new_page)
         await interaction.response.edit_message(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=2)
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary, row=2)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         embed = build_registry_embed(self.current_path, self.session_id)
         view = RegistryView(self.current_path, self.session_id, page=self.page)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="New Value", emoji="📝", style=discord.ButtonStyle.primary, row=3)
+    @discord.ui.button(label="New Value", emoji="📝", style=discord.ButtonStyle.secondary, row=3)
     async def newvalue_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.current_path:
             await interaction.response.send_message("❌ Select a key first!", ephemeral=True)
@@ -462,6 +462,6 @@ class RegistryView(discord.ui.View):
     
     @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=4)
     async def back_tools_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content=None, embed=embed_tools_panel(), view=ToolsPanelView())
+        await interaction.response.edit_message(content=None, embed=_get_tools_panel()[0](), view=_get_tools_panel()[1]())
 
 
