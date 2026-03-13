@@ -6,7 +6,7 @@
 BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 PREFIX = "."
 
-# Pre-defined commands
+# Pre-defined commands  
 COMMANDS = {
     "status": "systeminfo",
     "disk": "wmic logicaldisk get caption,freeheight,size",
