@@ -3,6 +3,7 @@ from Tools.Tools.panel import embed_tools_panel, ToolsPanelView
 from Tools.Fun.panel import embed_fun_panel, FunPanelView
 from Tools.System.panel import embed_system_panel, SystemPanelView
 from Tools.Windows.panel import embed_windows_panel, WindowsPanelView
+from Tools.Recovery.panel import embed_recovery_panel, RecoveryPanelView
 
 
 class StartupView(discord.ui.View):
@@ -25,6 +26,10 @@ class StartupView(discord.ui.View):
     @discord.ui.button(label="Windows", emoji="🪟", style=discord.ButtonStyle.secondary)
     async def windows_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=None, embed=embed_windows_panel(), view=WindowsPanelView())
+
+    @discord.ui.button(label="Recovery", emoji="🔓", style=discord.ButtonStyle.secondary)
+    async def recovery_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content=None, embed=embed_recovery_panel(), view=RecoveryPanelView())
 
     @discord.ui.button(label="Uninstall", emoji="🗑️", style=discord.ButtonStyle.danger)
     async def uninstall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):

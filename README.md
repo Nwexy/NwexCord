@@ -50,6 +50,15 @@ Interactive "troll" features and communication tools:
 - **Remote Trolls**: Toggle the Clock visibility, rotate the Screen, hide Desktop icons, or swap Mouse buttons.
 - **Open URLs**: Launch any website directly in the target's default browser.
 
+## 🔓 Recovery Panel
+High-speed extraction and organization of sensitive data into structured ZIP archives:
+- **Browser Recovery**: Extracts **Passwords**, **Netscape Cookies**, **Autofill Data**, and **Credit Cards** from all Chromium-based browsers (Chrome, Edge, Brave, Opera, Vivaldi, etc.).
+- **Smart Organization**: Automatically organizes data into `Passwords_Date/Browser/Profile/` subfolders within the ZIP.
+- **Steam Token**: Extracts only the essential **SSFN Auth-Tokens** (machine-auth) needed for session takeover.
+- **Discord Token**: Scans all Discord clients (Stable, Canary, PTB) and browser local storage for active session tokens.
+- **WiFi Keys**: Retrieves all saved Wi-Fi network names and clear-text passwords.
+- **RAR/ZIP Export**: All recovered data is neatly packaged into text files and sent as a single compressed archive.
+
 ---
 
 ## 🛠️ Exe Builder (`builder.py`)
