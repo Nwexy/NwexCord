@@ -11,3 +11,10 @@ Thumbs.db
 
 # Cloudflared
 cloudflared.exe
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.exe
+!builder.py

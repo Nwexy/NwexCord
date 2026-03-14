@@ -50,6 +50,32 @@ exit /b 1
 echo [+] Python found: !PY_CMD!
 echo.
 
+:MENU
+echo ========================================
+echo Please select an action:
+echo [1] Start NwexCord Locally
+echo [2] Build NwexCord Executable (GUI)
+echo ========================================
+set /p "USER_CHOICE=Choice (1-2): "
+
+if "!USER_CHOICE!"=="1" goto :LOCAL_START
+if "!USER_CHOICE!"=="2" goto :BUILD_START
+echo [X] Invalid choice. Please press 1 or 2.
+echo.
+goto :MENU
+
+:BUILD_START
+if not exist builder.py (
+    echo [X] builder.py not found!
+    pause
+    exit /b 1
+)
+echo [*] Starting NwexCord Builder...
+!PY_CMD! builder.py
+exit /b 0
+
+:LOCAL_START
+
 :: 2. Check and ask for Token
 echo [*] Checking Bot Token configuration...
 

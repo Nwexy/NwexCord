@@ -167,17 +167,24 @@ class StartupManager:
             return False, str(e)
 
 
-def build_startup_embed(session_id: str, items: list = None, selected_idx: int = -1):
+def build_startup_embed(session_id: str, items: list = None, selected_idx: int = -1, page: int = 0):
     """Build the Startup Manager embed with table-style layout."""
     if items is None:
         items = StartupManager.get_all_items()
+    
+    ITEMS_PER_PAGE = 15
+    total_pages = max(1, (len(items) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
     
     # Build table header
     header = f"{'[ Name ]':<38} {'[ Type ]':<10} {'[ Path ]'}"
     sep = "━" * 72
     
     rows = ""
-    for i, item in enumerate(items):
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, len(items))
+    
+    for i in range(start_idx, end_idx):
+        item = items[i]
         name = item['name']
         if len(name) > 34:
             name = name[:31] + "..."
@@ -207,20 +214,26 @@ def build_startup_embed(session_id: str, items: list = None, selected_idx: int =
         description=table_block,
         color=discord.Color.from_rgb(0, 120, 215)
     )
-    embed.set_footer(text=f"Selected [{selected_count}]  Startup [{len(items)}]")
+    embed.set_footer(text=f"Page {page + 1}/{total_pages} • Selected [{selected_count}] • Total [{len(items)}]")
     
     return embed, items
 
 
 class StartupSelect(discord.ui.Select):
     """Dropdown to select a startup item from the list."""
-    def __init__(self, items: list, session_id: str):
+    def __init__(self, items: list, session_id: str, page: int = 0):
         self.session_id = session_id
         self.items_data = items
+        self.page = page
         
+        ITEMS_PER_PAGE = 15
+        start_idx = page * ITEMS_PER_PAGE
+        end_idx = min(start_idx + ITEMS_PER_PAGE, len(items))
+        
+        options = []
         if items:
-            options = []
-            for i, item in enumerate(items[:25]):  # Discord max 25 options
+            for i in range(start_idx, end_idx):
+                item = items[i]
                 label = item['name'][:100] if len(item['name']) > 100 else item['name']
                 desc = f"{item['type']} — {item['path']}"
                 options.append(discord.SelectOption(
@@ -229,7 +242,7 @@ class StartupSelect(discord.ui.Select):
                     value=str(i),
                     emoji=item['icon']
                 ))
-        else:
+        if not options:
             options = [discord.SelectOption(label="(no items)", value="_none")]
         
         super().__init__(placeholder="🚀 Select a startup item...", options=options, row=0)
@@ -241,23 +254,48 @@ class StartupSelect(discord.ui.Select):
             return
         
         idx = int(selected)
-        embed, items = build_startup_embed(self.session_id, self.items_data, selected_idx=idx)
-        view = StartupManagerView(self.session_id, self.items_data, selected_idx=idx)
+        embed, items = build_startup_embed(self.session_id, self.items_data, selected_idx=idx, page=self.page)
+        view = StartupManagerView(self.session_id, self.items_data, selected_idx=idx, page=self.page)
         await interaction.response.edit_message(content=None, embed=embed, view=view)
 
 
 class StartupManagerView(discord.ui.View):
     """Interactive view for Startup Manager with Remove, Refresh, and Back."""
-    def __init__(self, session_id: str, items: list = None, selected_idx: int = -1):
+    def __init__(self, session_id: str, items: list = None, selected_idx: int = -1, page: int = 0):
         super().__init__(timeout=300)
         self.session_id = session_id
         self.selected_idx = selected_idx
+        self.page = page
         self.items_data = items if items is not None else StartupManager.get_all_items()
         
+        self.ITEMS_PER_PAGE = 15
+        self.total_pages = max(1, (len(self.items_data) + self.ITEMS_PER_PAGE - 1) // self.ITEMS_PER_PAGE)
+        
         # Add select dropdown
-        self.add_item(StartupSelect(self.items_data, session_id))
+        self.add_item(StartupSelect(self.items_data, session_id, page))
     
-    @discord.ui.button(label="Remove", emoji="🗑️", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="<", style=discord.ButtonStyle.secondary, row=1)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page > 0:
+            self.page -= 1
+            embed, items = build_startup_embed(self.session_id, self.items_data, selected_idx=self.selected_idx, page=self.page)
+            view = StartupManagerView(self.session_id, self.items_data, selected_idx=self.selected_idx, page=self.page)
+            await interaction.response.edit_message(content=None, embed=embed, view=view)
+        else:
+            await interaction.response.defer()
+
+    @discord.ui.button(label=">", style=discord.ButtonStyle.secondary, row=1)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page < self.total_pages - 1:
+            self.page += 1
+            embed, items = build_startup_embed(self.session_id, self.items_data, selected_idx=self.selected_idx, page=self.page)
+            view = StartupManagerView(self.session_id, self.items_data, selected_idx=self.selected_idx, page=self.page)
+            await interaction.response.edit_message(content=None, embed=embed, view=view)
+        else:
+            await interaction.response.defer()
+            
+
+    @discord.ui.button(label="Remove", emoji="🗑️", style=discord.ButtonStyle.secondary, row=2)
     async def remove_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.selected_idx < 0 or self.selected_idx >= len(self.items_data):
             await interaction.response.send_message("❌ Please select a startup item first!", ephemeral=True)
@@ -269,25 +307,31 @@ class StartupManagerView(discord.ui.View):
         
         # After removing, refresh the list
         new_items = StartupManager.get_all_items()
-        embed, items = build_startup_embed(self.session_id, new_items)
+        
+        # Adjust page if out of bounds after deletion
+        total_pages = max(1, (len(new_items) + self.ITEMS_PER_PAGE - 1) // self.ITEMS_PER_PAGE)
+        if self.page >= total_pages:
+            self.page = max(0, total_pages - 1)
+            
+        embed, items = build_startup_embed(self.session_id, new_items, page=self.page)
         
         if success:
             embed.add_field(name="✅ Removed", value=f"`{target['name']}` ({target['type']})", inline=False)
         else:
             embed.add_field(name="❌ Failed", value=f"`{target['name']}` — {msg}", inline=False)
         
-        view = StartupManagerView(self.session_id, new_items)
+        view = StartupManagerView(self.session_id, new_items, page=self.page)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Refresh", emoji="🔄", style=discord.ButtonStyle.secondary, row=2)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         new_items = StartupManager.get_all_items()
-        embed, items = build_startup_embed(self.session_id, new_items)
-        view = StartupManagerView(self.session_id, new_items)
+        embed, items = build_startup_embed(self.session_id, new_items, page=self.page)
+        view = StartupManagerView(self.session_id, new_items, page=self.page)
         await interaction.edit_original_response(content=None, embed=embed, view=view)
     
-    @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Back to Tools", emoji="⬅", style=discord.ButtonStyle.secondary, row=2)
     async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content=None, embed=_get_tools_panel()[0](), view=_get_tools_panel()[1]())
 
